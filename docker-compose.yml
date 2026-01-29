@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: farm_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: farm_management
+      POSTGRES_USER: farm_admin
+      POSTGRES_PASSWORD: farm_password_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./packages/backend/database/migrations:/docker-entrypoint-initdb.d
+    networks:
+      - farm_network
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: farm_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@farm.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - farm_network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  farm_network:
+    driver: bridge
