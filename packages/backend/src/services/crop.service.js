@@ -11,6 +11,7 @@ const carePlanTaskRepository = require('../repositories/care-plan-task.repositor
 const batchCareScheduleRepository = require('../repositories/batch-care-schedule.repository');
 const scheduledBatchTaskRepository = require('../repositories/scheduled-batch-task.repository');
 const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
+const { addDays } = require('../utils/dates');
 
 const ACTIVE_BATCH_STATUSES = ['planted', 'growing', 'harvesting'];
 
@@ -362,10 +363,7 @@ class CropService {
     const growthDays = variety.growth_days || variety.crop_type_growth_days;
     let expectedHarvestDate = null;
     if (growthDays && data.planting_date) {
-      // Date-only arithmetic in UTC so the server time zone cannot shift the day
-      const plantingDate = new Date(`${String(data.planting_date).slice(0, 10)}T00:00:00Z`);
-      plantingDate.setUTCDate(plantingDate.getUTCDate() + growthDays);
-      expectedHarvestDate = plantingDate.toISOString().slice(0, 10);
+      expectedHarvestDate = addDays(data.planting_date, growthDays);
     }
 
     const batchData = {
@@ -934,14 +932,9 @@ class CropService {
    */
   async _generateScheduledTasks(scheduleId, batchId, planTask, plantingDate, totalDays) {
     const createTask = async (dayOffset, recurringSeq = null) => {
-      const plannedDate = new Date(plantingDate);
-      plannedDate.setDate(plannedDate.getDate() + dayOffset);
-
-      const dueStart = new Date(plannedDate);
-      dueStart.setDate(dueStart.getDate() - (planTask.tolerance_days_before || 0));
-
-      const dueEnd = new Date(plannedDate);
-      dueEnd.setDate(dueEnd.getDate() + (planTask.tolerance_days_after || 2));
+      const plannedDate = addDays(plantingDate, dayOffset);
+      const dueStart = addDays(plannedDate, -(planTask.tolerance_days_before || 0));
+      const dueEnd = addDays(plannedDate, planTask.tolerance_days_after || 2);
 
       await scheduledBatchTaskRepository.create({
         batch_id: batchId,
