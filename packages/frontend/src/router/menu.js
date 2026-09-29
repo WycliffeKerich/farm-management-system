@@ -6,6 +6,7 @@ export const MENU_SECTIONS = [
     { key: 'home', label: 'Home' },
     { key: 'crops', label: 'Crop Management', icon: 'pi pi-fw pi-sun' },
     { key: 'animals', label: 'Animal Management', icon: 'pi pi-fw pi-heart' },
+    { key: 'inventory', label: 'Inventory', icon: 'pi pi-fw pi-database' },
     { key: 'admin', label: 'Administration', icon: 'pi pi-fw pi-cog' }
 ];
 
