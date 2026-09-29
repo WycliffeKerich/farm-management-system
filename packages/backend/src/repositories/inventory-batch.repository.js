@@ -20,6 +20,7 @@ class InventoryBatchRepository extends BaseRepository {
         'expiry_date',
         'received_date',
         'supplier',
+        'supplier_id',
         'supplier_batch_number',
         'storage_location',
         'status',
@@ -99,24 +100,45 @@ class InventoryBatchRepository extends BaseRepository {
   }
 
   /**
-   * Lock the batches FEFO may draw from, in the order it draws: earliest
-   * expiry first (no expiry last), then oldest received. Expired batches are
-   * never used even if the nightly status job has not marked them yet.
+   * Lock every batch of an item that still holds stock, in the order FEFO
+   * draws: earliest expiry first (no expiry last), then oldest received.
+   * `usable` is false for batches that are not active or are past their expiry
+   * date, even if the nightly status job has not marked them yet.
    * @param {number} itemId - Inventory item ID
    * @param {Object} t - Transaction (required: the locks only last for its duration)
-   * @returns {Promise<Array>} Locked batches
+   * @returns {Promise<Array>} Locked batches, each with `usable` and `past_expiry`
    */
-  async lockAvailableForItem(itemId, t) {
+  async lockStockedForItem(itemId, t) {
     return t.any(
-      `SELECT * FROM ${this.tableName}
+      `SELECT *,
+              COALESCE(expiry_date < CURRENT_DATE, false) AS past_expiry,
+              (status = 'active' AND COALESCE(expiry_date >= CURRENT_DATE, true)) AS usable
+         FROM ${this.tableName}
         WHERE inventory_item_id = $1
-          AND status = 'active'
           AND quantity > 0
           AND deleted_at IS NULL
-          AND (expiry_date IS NULL OR expiry_date >= CURRENT_DATE)
         ORDER BY expiry_date ASC NULLS LAST, received_date ASC, id ASC
         FOR UPDATE`,
       [itemId]
+    );
+  }
+
+  /**
+   * Lock one batch of an item
+   * @param {number} batchId - Batch ID
+   * @param {number} itemId - The item it must belong to
+   * @param {Object} t - Transaction
+   * @returns {Promise<Object|null>} Locked batch with `usable` and `past_expiry`, or null
+   */
+  async lockForItem(batchId, itemId, t) {
+    return t.oneOrNone(
+      `SELECT *,
+              COALESCE(expiry_date < CURRENT_DATE, false) AS past_expiry,
+              (status = 'active' AND COALESCE(expiry_date >= CURRENT_DATE, true)) AS usable
+         FROM ${this.tableName}
+        WHERE id = $1 AND inventory_item_id = $2 AND deleted_at IS NULL
+        FOR UPDATE`,
+      [batchId, itemId]
     );
   }
 

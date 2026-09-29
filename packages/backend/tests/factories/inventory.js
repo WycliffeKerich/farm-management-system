@@ -32,4 +32,19 @@ async function createItem(overrides = {}) {
   ]);
 }
 
-module.exports = { createCategory, createItem };
+/**
+ * Insert a unit of measure. Pass `base` (a unit row) and `conversion_factor`
+ * for a derived unit: 1 of this unit = conversion_factor of the base.
+ */
+async function createUnit({ base, ...overrides } = {}) {
+  return db.one('INSERT INTO units_of_measure ($1:name) VALUES ($1:csv) RETURNING *', [
+    {
+      category: base ? base.category : 'weight',
+      conversion_factor: 1,
+      ...overrides,
+      base_unit_id: base ? base.id : null,
+    },
+  ]);
+}
+
+module.exports = { createCategory, createItem, createUnit };

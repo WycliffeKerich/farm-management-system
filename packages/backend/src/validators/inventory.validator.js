@@ -3,6 +3,37 @@ const { INVENTORY_TRANSACTION_TYPES } = require('../config/constants');
 
 const TRANSACTION_TYPES = Object.values(INVENTORY_TRANSACTION_TYPES);
 
+// Safety intervals, reorder quantity and default supplier, shared by create and update
+const itemSafetyFields = [
+  body('active_ingredient')
+    .optional({ values: 'null' })
+    .trim()
+    .isLength({ max: 255 }).withMessage('Active ingredient must be at most 255 characters'),
+  ...['pre_harvest_interval_days', 'milk_withdrawal_days', 'meat_withdrawal_days', 'egg_withdrawal_days'].map((field) =>
+    body(field)
+      .optional({ values: 'null' })
+      .isInt({ min: 0, max: 3650 }).withMessage(`${field} must be a whole number of days`)
+      .toInt()
+  ),
+  body('reorder_quantity')
+    .optional({ values: 'null' })
+    .isFloat({ min: 0 }).withMessage('Reorder quantity must be a non-negative number'),
+  body('default_supplier_id')
+    .optional({ values: 'null' })
+    .isInt().withMessage('Supplier ID must be an integer'),
+];
+
+// Where an outgoing movement comes from and in which unit it was measured
+const movementSourceFields = [
+  body('unit')
+    .optional({ values: 'falsy' })
+    .trim()
+    .isLength({ max: 50 }).withMessage('Unit must be at most 50 characters'),
+  body('inventory_batch_id')
+    .optional({ values: 'null' })
+    .isInt().withMessage('Batch ID must be an integer'),
+];
+
 /**
  * Validators for inventory management endpoints
  */
@@ -68,6 +99,7 @@ const inventoryValidators = {
     body('notes')
       .optional({ values: 'null' })
       .trim(),
+    ...itemSafetyFields,
   ],
 
   updateItem: [
@@ -105,6 +137,7 @@ const inventoryValidators = {
     body('notes')
       .optional({ values: 'null' })
       .trim(),
+    ...itemSafetyFields,
   ],
 
   // ==================== TRANSACTION VALIDATORS ====================
@@ -128,6 +161,7 @@ const inventoryValidators = {
     body('total_cost')
       .optional({ values: 'null' })
       .isFloat({ min: 0 }).withMessage('Total cost must be a non-negative number'),
+    ...movementSourceFields,
     body('reference_type')
       .optional({ values: 'null' })
       .isIn(['crop_batch', 'animal', 'animal_group', 'task', 'manual'])
@@ -148,6 +182,7 @@ const inventoryValidators = {
     body('quantity')
       .notEmpty().withMessage('Quantity is required')
       .isFloat({ gt: 0 }).withMessage('Quantity must be greater than zero'),
+    ...movementSourceFields,
     body('reference_type')
       .optional({ values: 'null' })
       .isIn(['crop_batch', 'animal', 'animal_group', 'task', 'manual'])

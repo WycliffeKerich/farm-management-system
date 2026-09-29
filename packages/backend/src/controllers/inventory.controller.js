@@ -193,15 +193,15 @@ class InventoryController {
   }
 
   /**
-   * Use stock from an item's batches, earliest expiry first
+   * Use stock from an item: batches earliest expiry first, then unbatched stock
    */
   async useStock(req, res, next) {
     try {
-      const { quantity, reference_type, reference_id, notes, transaction_date } = req.body;
-      const result = await inventoryService.useStockFromBatches(
+      const { quantity, unit, inventory_batch_id, reference_type, reference_id, notes, transaction_date } = req.body;
+      const result = await inventoryService.useStock(
         req.params.id,
         quantity,
-        { reference_type, reference_id, notes, transaction_date },
+        { unit, inventory_batch_id, reference_type, reference_id, notes, transaction_date },
         req.user.id
       );
       res.status(201).json({ success: true, data: result });
