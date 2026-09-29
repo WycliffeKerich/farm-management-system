@@ -12,6 +12,8 @@ const batchCareScheduleRepository = require('../repositories/batch-care-schedule
 const scheduledBatchTaskRepository = require('../repositories/scheduled-batch-task.repository');
 const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
 
+const ACTIVE_BATCH_STATUSES = ['planted', 'growing', 'harvesting'];
+
 /**
  * Service for crop management operations
  */
@@ -84,7 +86,10 @@ class CropService {
     if (!cropType) {
       throw new NotFoundError('Crop type not found');
     }
-    await cropTypeRepository.delete(id);
+    if (await cropVarietyRepository.exists({ crop_type_id: id })) {
+      throw new ConflictError('Delete this crop type’s varieties first', 'IN_USE');
+    }
+    await cropTypeRepository.softDelete(id);
   }
 
   /**
@@ -181,7 +186,10 @@ class CropService {
     if (!variety) {
       throw new NotFoundError('Crop variety not found');
     }
-    await cropVarietyRepository.delete(id);
+    if (await cropBatchRepository.exists({ crop_variety_id: id, status: ACTIVE_BATCH_STATUSES })) {
+      throw new ConflictError('Cannot delete a variety with active crop batches', 'IN_USE');
+    }
+    await cropVarietyRepository.softDelete(id);
   }
 
   // ==================== GROWING LOCATIONS ====================
@@ -264,10 +272,10 @@ class CropService {
     // Check if there are active batches
     const activeBatches = await cropBatchRepository.findActiveByLocation(id);
     if (activeBatches.length > 0) {
-      throw new ConflictError('Cannot delete location with active crop batches');
+      throw new ConflictError('Cannot delete location with active crop batches', 'IN_USE');
     }
 
-    await growingLocationRepository.delete(id);
+    await growingLocationRepository.softDelete(id);
   }
 
   /**
@@ -422,7 +430,7 @@ class CropService {
     if (!batch) {
       throw new NotFoundError('Crop batch not found');
     }
-    await cropBatchRepository.delete(id);
+    await cropBatchRepository.softDelete(id);
   }
 
   /**
@@ -476,7 +484,7 @@ class CropService {
     if (!observation) {
       throw new NotFoundError('Observation not found');
     }
-    await growthObservationRepository.delete(id);
+    await growthObservationRepository.softDelete(id);
   }
 
   // ==================== HARVESTS ====================
@@ -548,7 +556,7 @@ class CropService {
     if (!harvest) {
       throw new NotFoundError('Harvest record not found');
     }
-    await harvestRepository.delete(id);
+    await harvestRepository.softDelete(id);
   }
 
   // ==================== INPUT APPLICATIONS ====================
@@ -603,7 +611,7 @@ class CropService {
     if (!application) {
       throw new NotFoundError('Input application not found');
     }
-    await cropInputApplicationRepository.delete(id);
+    await cropInputApplicationRepository.softDelete(id);
   }
 
   // ==================== PEST & DISEASE ====================
@@ -691,7 +699,7 @@ class CropService {
     if (!record) {
       throw new NotFoundError('Pest/disease record not found');
     }
-    await cropPestDiseaseRepository.delete(id);
+    await cropPestDiseaseRepository.softDelete(id);
   }
 
   // ==================== CARE PLANS ====================

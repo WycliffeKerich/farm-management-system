@@ -281,14 +281,11 @@ describe('change password', () => {
     const otherDevice = request.agent(app);
     await otherDevice.post('/api/v1/auth/login').send({ email: user.email, password: user.password });
 
-    const wrong = await agent
-      .put('/api/v1/auth/change-password')
-      .set(auth)
-      .send({
-        currentPassword: 'nope',
-        newPassword: 'another-good-password',
-        confirmPassword: 'another-good-password',
-      });
+    const wrong = await agent.put('/api/v1/auth/change-password').set(auth).send({
+      currentPassword: 'nope',
+      newPassword: 'another-good-password',
+      confirmPassword: 'another-good-password',
+    });
     expect(wrong.status).toBe(401);
 
     const res = await agent.put('/api/v1/auth/change-password').set(auth).send({

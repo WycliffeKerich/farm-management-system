@@ -19,7 +19,7 @@ class CropPestDiseaseRepository extends BaseRepository {
              u.first_name || ' ' || u.last_name as recorded_by_name
       FROM crop_pests_diseases cpd
       LEFT JOIN users u ON cpd.recorded_by = u.id
-      WHERE cpd.batch_id = $1
+      WHERE cpd.batch_id = $1 AND cpd.deleted_at IS NULL
       ORDER BY cpd.incident_date DESC
     `;
     return await this.db.any(query, [batchId]);
@@ -36,7 +36,7 @@ class CropPestDiseaseRepository extends BaseRepository {
              u.first_name || ' ' || u.last_name as recorded_by_name
       FROM crop_pests_diseases cpd
       LEFT JOIN users u ON cpd.recorded_by = u.id
-      WHERE cpd.batch_id = $1 AND cpd.status != 'resolved'
+      WHERE cpd.batch_id = $1 AND cpd.status != 'resolved' AND cpd.deleted_at IS NULL
       ORDER BY cpd.severity DESC, cpd.incident_date DESC
     `;
     return await this.db.any(query, [batchId]);
@@ -54,7 +54,7 @@ class CropPestDiseaseRepository extends BaseRepository {
              u.first_name || ' ' || u.last_name as recorded_by_name
       FROM crop_pests_diseases cpd
       LEFT JOIN users u ON cpd.recorded_by = u.id
-      WHERE cpd.batch_id = $1 AND cpd.type = $2
+      WHERE cpd.batch_id = $1 AND cpd.type = $2 AND cpd.deleted_at IS NULL
       ORDER BY cpd.incident_date DESC
     `;
     return await this.db.any(query, [batchId, type]);
@@ -81,7 +81,7 @@ class CropPestDiseaseRepository extends BaseRepository {
       LEFT JOIN users u ON cpd.recorded_by = u.id
     `;
 
-    const conditions = [];
+    const conditions = ['cpd.deleted_at IS NULL'];
     const values = [];
     let paramIndex = 1;
 
@@ -170,6 +170,7 @@ class CropPestDiseaseRepository extends BaseRepository {
         COUNT(*) FILTER (WHERE severity = 'high') as high_severity_count,
         COUNT(*) as total_count
       FROM ${this.tableName}
+      WHERE deleted_at IS NULL
     `;
     return await this.db.one(query);
   }
@@ -186,11 +187,12 @@ class CropPestDiseaseRepository extends BaseRepository {
              COUNT(*) as occurrence_count,
              MAX(incident_date) as last_occurrence
       FROM ${this.tableName}
+      WHERE deleted_at IS NULL
     `;
 
     const values = [];
     if (type) {
-      query += ' WHERE type = $1';
+      query += ' AND type = $1';
       values.push(type);
     }
 
@@ -221,6 +223,8 @@ class CropPestDiseaseRepository extends BaseRepository {
       JOIN crop_types ct ON cv.crop_type_id = ct.id
       LEFT JOIN growing_locations gl ON cb.location_id = gl.id
       WHERE cpd.status IN ('active', 'controlled')
+        AND cpd.deleted_at IS NULL
+        AND cb.deleted_at IS NULL
       ORDER BY
         CASE cpd.severity
           WHEN 'critical' THEN 1

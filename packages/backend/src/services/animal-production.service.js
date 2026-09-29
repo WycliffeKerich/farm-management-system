@@ -58,6 +58,8 @@ class AnimalProductionService {
       throw new ValidationError('Cannot specify both animal and animal group');
     }
 
+    await this.getProductionTypeById(data.production_type_id);
+
     // Set recorded_by
     data.recorded_by = userId;
 

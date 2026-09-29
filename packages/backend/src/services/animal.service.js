@@ -2132,7 +2132,7 @@ class AnimalService {
 
     // Note: This doesn't reverse the animal status change
     // You may want to add logic to handle that based on business rules
-    await animalSaleRepository.delete(id);
+    await animalSaleRepository.softDelete(id);
   }
 
   /**

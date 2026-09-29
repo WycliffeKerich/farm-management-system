@@ -13,9 +13,10 @@ function mapDatabaseError(err) {
       return new AppError('A record with the same value already exists', 409, 'DUPLICATE', {
         constraint: err.constraint,
       });
+    case '23001': // restrict_violation (ON DELETE RESTRICT)
     case '23503': // foreign_key_violation
       // On DELETE/UPDATE of a parent the message says the key "is still referenced"
-      if (/still referenced/i.test(err.detail || '')) {
+      if (err.code === '23001' || /still referenced/i.test(err.detail || '')) {
         return new AppError('This record is in use by other records and cannot be removed', 409, 'IN_USE', {
           constraint: err.constraint,
         });

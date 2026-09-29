@@ -7,7 +7,7 @@ class AnimalProductionRepository {
   async findAllProductionTypes(filters = {}) {
     let query = `
       SELECT * FROM animal_production_types
-      WHERE 1=1
+      WHERE deleted_at IS NULL
     `;
     const params = [];
 
@@ -32,7 +32,7 @@ class AnimalProductionRepository {
   }
 
   async findProductionTypeById(id) {
-    return db.oneOrNone('SELECT * FROM animal_production_types WHERE id = $1', [id]);
+    return db.oneOrNone('SELECT * FROM animal_production_types WHERE id = $1 AND deleted_at IS NULL', [id]);
   }
 
   async createProductionType(data) {
@@ -70,7 +70,10 @@ class AnimalProductionRepository {
   }
 
   async deleteProductionType(id) {
-    return db.result('DELETE FROM animal_production_types WHERE id = $1', [id]);
+    return db.result(
+      'UPDATE animal_production_types SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL',
+      [id]
+    );
   }
 
   // ==================== PRODUCTION RECORDS ====================
@@ -92,7 +95,7 @@ class AnimalProductionRepository {
       LEFT JOIN animals a ON pr.animal_id = a.id
       LEFT JOIN animal_groups ag ON pr.animal_group_id = ag.id
       LEFT JOIN users u ON pr.recorded_by = u.id
-      WHERE 1=1
+      WHERE pr.deleted_at IS NULL
     `;
     const params = [];
 
@@ -145,7 +148,7 @@ class AnimalProductionRepository {
       SELECT COUNT(*) as total
       FROM animal_production_records pr
       JOIN animal_production_types pt ON pr.production_type_id = pt.id
-      WHERE 1=1
+      WHERE pr.deleted_at IS NULL
     `;
     const countParams = [];
 
@@ -210,7 +213,7 @@ class AnimalProductionRepository {
       LEFT JOIN animals a ON pr.animal_id = a.id
       LEFT JOIN animal_groups ag ON pr.animal_group_id = ag.id
       LEFT JOIN users u ON pr.recorded_by = u.id
-      WHERE pr.id = $1
+      WHERE pr.id = $1 AND pr.deleted_at IS NULL
     `,
       [id]
     );
@@ -283,13 +286,16 @@ class AnimalProductionRepository {
   }
 
   async deleteProductionRecord(id) {
-    return db.result('DELETE FROM animal_production_records WHERE id = $1', [id]);
+    return db.result(
+      'UPDATE animal_production_records SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL',
+      [id]
+    );
   }
 
   // ==================== STATISTICS ====================
 
   async getProductionStatistics(filters = {}) {
-    let baseWhere = '1=1';
+    let baseWhere = 'pr.deleted_at IS NULL';
     const params = [];
 
     if (filters.date_from) {
@@ -327,7 +333,7 @@ class AnimalProductionRepository {
   }
 
   async getDailyProductionSummary(filters = {}) {
-    let baseWhere = '1=1';
+    let baseWhere = 'pr.deleted_at IS NULL';
     const params = [];
 
     if (filters.date_from) {
@@ -370,7 +376,7 @@ class AnimalProductionRepository {
   }
 
   async getProductionBySource(filters = {}) {
-    let baseWhere = '1=1';
+    let baseWhere = 'pr.deleted_at IS NULL';
     const params = [];
 
     if (filters.date_from) {

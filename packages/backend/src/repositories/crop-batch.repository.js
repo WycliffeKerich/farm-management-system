@@ -56,10 +56,10 @@ class CropBatchRepository extends BaseRepository {
       JOIN crop_types ct ON cv.crop_type_id = ct.id
       LEFT JOIN growing_locations gl ON cb.location_id = gl.id
       LEFT JOIN users u ON cb.created_by = u.id
-      LEFT JOIN harvests h ON cb.id = h.batch_id
+      LEFT JOIN harvests h ON cb.id = h.batch_id AND h.deleted_at IS NULL
     `;
 
-    const conditions = [];
+    const conditions = ['cb.deleted_at IS NULL'];
     const values = [];
     let paramIndex = 1;
 
@@ -138,8 +138,8 @@ class CropBatchRepository extends BaseRepository {
       JOIN crop_types ct ON cv.crop_type_id = ct.id
       LEFT JOIN growing_locations gl ON cb.location_id = gl.id
       LEFT JOIN users u ON cb.created_by = u.id
-      LEFT JOIN harvests h ON cb.id = h.batch_id
-      WHERE cb.id = $1
+      LEFT JOIN harvests h ON cb.id = h.batch_id AND h.deleted_at IS NULL
+      WHERE cb.id = $1 AND cb.deleted_at IS NULL
       GROUP BY cb.id, cv.name, cv.growth_days, ct.id, ct.name, ct.category, ct.typical_growth_days,
                gl.name, gl.type, gl.size_sqm, u.first_name, u.last_name
     `;
@@ -185,6 +185,7 @@ class CropBatchRepository extends BaseRepository {
         COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
         COUNT(*) as total_count
       FROM ${this.tableName}
+      WHERE deleted_at IS NULL
     `;
     return await this.db.one(query);
   }
@@ -203,6 +204,7 @@ class CropBatchRepository extends BaseRepository {
       JOIN crop_varieties cv ON cb.crop_variety_id = cv.id
       JOIN crop_types ct ON cv.crop_type_id = ct.id
       WHERE cb.location_id = $1
+        AND cb.deleted_at IS NULL
         AND cb.status IN ('planted', 'growing', 'harvesting')
       ORDER BY cb.planting_date DESC
     `;
@@ -227,7 +229,7 @@ class CropBatchRepository extends BaseRepository {
       LEFT JOIN users u ON cb.created_by = u.id
     `;
 
-    const conditions = [];
+    const conditions = ['cb.deleted_at IS NULL'];
     const values = [];
     let paramIndex = 1;
 

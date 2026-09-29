@@ -1238,7 +1238,7 @@ Fix the data layer (findings F2, F4, F5):
      - never leak the stack or internal message when NODE_ENV=production
 
 2. Deletes (F7, F8):
-   - Migration 012_restrict_history_fks.sql: for history tables (harvests, growth_observations, crop_input_applications, crop_pests_diseases, animal_* history tables, inventory_transactions, employee_attendance, employee_salaries, task_updates) change the FK to ON DELETE RESTRICT.
+   - Migration 013_restrict_history_fks.sql: for history tables (harvests, growth_observations, crop_input_applications, crop_pests_diseases, animal_* history tables, inventory_transactions, employee_attendance, employee_salaries, task_updates) change the FK to ON DELETE RESTRICT.
    - Keep CASCADE only for true composition children (e.g. care plan tasks, checklist items).
    - Add deleted_at where it is missing.
    - Crop and animal services soft-delete. Deleting a parent that has active history → soft delete only.

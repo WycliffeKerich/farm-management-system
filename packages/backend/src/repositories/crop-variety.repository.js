@@ -19,6 +19,7 @@ class CropVarietyRepository extends BaseRepository {
              ct.category as crop_type_category
       FROM crop_varieties cv
       JOIN crop_types ct ON cv.crop_type_id = ct.id
+      WHERE cv.deleted_at IS NULL
       ORDER BY ct.name ASC, cv.name ASC
     `;
     return await this.db.any(query);
@@ -35,7 +36,7 @@ class CropVarietyRepository extends BaseRepository {
              ct.name as crop_type_name
       FROM crop_varieties cv
       JOIN crop_types ct ON cv.crop_type_id = ct.id
-      WHERE cv.crop_type_id = $1
+      WHERE cv.crop_type_id = $1 AND cv.deleted_at IS NULL
       ORDER BY cv.name ASC
     `;
     return await this.db.any(query, [cropTypeId]);
@@ -50,7 +51,7 @@ class CropVarietyRepository extends BaseRepository {
   async findByNameAndCropType(name, cropTypeId) {
     const query = `
       SELECT * FROM ${this.tableName}
-      WHERE LOWER(name) = LOWER($1) AND crop_type_id = $2
+      WHERE LOWER(name) = LOWER($1) AND crop_type_id = $2 AND deleted_at IS NULL
     `;
     return await this.db.oneOrNone(query, [name, cropTypeId]);
   }
@@ -68,7 +69,7 @@ class CropVarietyRepository extends BaseRepository {
              ct.typical_growth_days as crop_type_growth_days
       FROM crop_varieties cv
       JOIN crop_types ct ON cv.crop_type_id = ct.id
-      WHERE cv.id = $1
+      WHERE cv.id = $1 AND cv.deleted_at IS NULL
     `;
     return await this.db.oneOrNone(query, [id]);
   }
