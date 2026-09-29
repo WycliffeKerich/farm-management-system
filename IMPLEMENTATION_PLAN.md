@@ -325,7 +325,7 @@ _Carried forward:_
 
 ---
 
-### Phase 3.5: Hardening & Test Harness (1.5 weeks) ◀ next
+### Phase 3.5: Hardening & Test Harness (1.5 weeks) ◀ in progress (inventory items pending the Phase 4 rebase)
 **Branch:** `feature/phase-3.5-hardening`
 
 **Goal:** make the existing code safe and correct, and put the test and CI safety net in place, before adding features.
@@ -370,6 +370,27 @@ _Carried forward:_
 - All F1–F16 and F21 findings closed.
 - Tests exist for every fix.
 - CI is green and required on PRs into `develop`.
+
+**Status (2026-09-29):**
+
+Done on `feature/phase-3.5-hardening`:
+- **Track A:** A1–A4, A6–A10 and A12–A15 are done for the auth, user, crop and animal modules.
+- **A4 extension:** DATE columns are returned as plain `YYYY-MM-DD` strings. Date-only arithmetic is done in UTC (`src/utils/dates.js`), so schedules no longer shift by a day with the server timezone.
+- **Timezone fix:** login lockout, refresh-token expiry and the reuse grace window are compared on the database clock, not in JavaScript. `TIMESTAMP` columns are DB-local time, so JavaScript comparisons broke whenever the process timezone differed from the DB's.
+- **Track B:**
+  - Backend: 110 Jest tests, 83% line coverage, stable under the UTC, Africa/Nairobi and America/New_York timezones.
+  - Frontend: 36 Vitest tests, 97% line coverage of the session and routing core.
+  - CI: `.github/workflows/ci.yml` runs on Node 22 with `postgres:18`.
+- **Lint:** frontend lint is clean. The existing views were formatted once, so lint can gate CI.
+
+Open:
+- **A5 and the inventory halves of A4, A6 and A11:** these land when Phase 4 is rebased onto this branch (Prompt 3.5.5).
+  - Migrations 010/011 are already applied to the local dev database from the WIP. Record them with `npm run migrate -- --mark-applied=…` after the rebase.
+- **CI as a required check:** make CI required on `develop` in the GitHub branch protection settings after the first green run.
+
+Follow-ups:
+- **`timestamptz` migration:** `TIMESTAMP` columns (`created_at`, `last_login`, `locked_until`, …) are serialised using Node's local timezone. Converting them to `timestamptz` removes the dependency on the server's timezone for displayed times. This is a small migration; schedule it early in Phase 4.
+- **Frontend tests for views:** the coverage gate covers only the session and routing core. Extend `coverage.include` as views and stores get tests (start with the user management and inventory transaction forms).
 
 ---
 
