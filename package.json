@@ -5,30 +5,28 @@
   "private": true,
   "workspaces": [
     "packages/backend",
-    "packages/frontend",
-    "packages/shared"
+    "packages/frontend"
   ],
   "scripts": {
-    "install-all": "npm install",
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:backend": "cd packages/backend && npm run dev",
-    "dev:frontend": "cd packages/frontend && npm run dev",
-    "build": "npm run build:backend && npm run build:frontend",
-    "build:backend": "cd packages/backend && npm run build",
-    "build:frontend": "cd packages/frontend && npm run build",
+    "dev": "concurrently -n api,web \"npm run dev -w packages/backend\" \"npm run dev -w packages/frontend\"",
+    "dev:backend": "npm run dev -w packages/backend",
+    "dev:frontend": "npm run dev -w packages/frontend",
+    "build": "npm run build -w packages/frontend",
+    "migrate": "npm run migrate -w packages/backend",
     "test": "npm run test:backend && npm run test:frontend",
-    "test:backend": "cd packages/backend && npm test",
-    "test:frontend": "cd packages/frontend && npm test",
+    "test:backend": "npm test -w packages/backend",
+    "test:frontend": "npm test -w packages/frontend",
+    "test:ci": "npm run test:ci -w packages/backend && npm run test:coverage -w packages/frontend",
     "lint": "npm run lint:backend && npm run lint:frontend",
-    "lint:backend": "cd packages/backend && npm run lint",
-    "lint:frontend": "cd packages/frontend && npm run lint"
+    "lint:backend": "npm run lint -w packages/backend",
+    "lint:frontend": "npm run lint -w packages/frontend"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
   },
   "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=9.0.0"
+    "node": ">=22",
+    "npm": ">=10"
   },
   "author": "Farm Management Team",
   "license": "MIT"
