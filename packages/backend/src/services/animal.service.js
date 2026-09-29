@@ -11,9 +11,10 @@ const scheduledAnimalTaskRepository = require('../repositories/scheduled-animal-
 const breedingRecordRepository = require('../repositories/breeding-record.repository');
 const animalSaleRepository = require('../repositories/animal-sale.repository');
 const incubationRecordRepository = require('../repositories/incubation-record.repository');
+const withdrawalService = require('./withdrawal.service');
 const { db } = require('../config/database');
 const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
-const { addDays } = require('../utils/dates');
+const { addDays, toDateString } = require('../utils/dates');
 
 /**
  * Service for animal management operations
@@ -1636,11 +1637,14 @@ class AnimalService {
   }
 
   /**
-   * Create an animal sale record
-   * @param {Object} data - Sale data
+   * Create an animal sale record. Selling an animal, or animals from a group,
+   * inside a meat withdrawal period is refused (409 WITHDRAWAL_ACTIVE) unless
+   * the owner gives an override_reason.
+   * @param {Object} data - Sale data, with optional override_reason
+   * @param {Object} user - { id, role }
    * @returns {Promise<Object>}
    */
-  async createAnimalSale(data) {
+  async createAnimalSale(data, user) {
     // Validate that either animal_id or animal_group_id is provided in reference
     if (!data.reference_type || !data.reference_id) {
       throw new ValidationError('Reference type and ID are required');
@@ -1670,7 +1674,7 @@ class AnimalService {
       }
 
       return await db.tx(async (t) => {
-        const sale = await animalSaleRepository.create(data, t);
+        const sale = await animalSaleRepository.create(await this.withSaleOverride(data, user, t), t);
         await animalRepository.updateStatus(data.reference_id, 'sold', data.sale_date, t);
         return sale;
       });
@@ -1685,7 +1689,7 @@ class AnimalService {
     }
 
     return await db.tx(async (t) => {
-      const sale = await animalSaleRepository.create(data, t);
+      const sale = await animalSaleRepository.create(await this.withSaleOverride(data, user, t), t);
       // Throws (and rolls back the sale) if the group does not have enough animals
       await animalGroupRepository.recordRemoval(
         data.reference_id,
@@ -1708,25 +1712,49 @@ class AnimalService {
   }
 
   /**
-   * Update an animal sale record
+   * Update an animal sale record. Moving it to another date checks the meat
+   * withdrawal period again, as for a new sale.
    * @param {number} id - Sale ID
-   * @param {Object} data - Updated data
+   * @param {Object} data - Updated data, with optional override_reason
+   * @param {Object} user - { id, role }
    * @returns {Promise<Object>}
    */
-  async updateAnimalSale(id, data) {
-    const sale = await animalSaleRepository.findById(id);
-    if (!sale) {
-      throw new NotFoundError('Sale record not found');
-    }
+  async updateAnimalSale(id, data, user) {
+    return db.tx(async (t) => {
+      const sale = await animalSaleRepository.findById(id, t);
+      if (!sale) {
+        throw new NotFoundError('Sale record not found');
+      }
 
-    // Recalculate total if quantity or unit_price changed
-    if (data.quantity || data.unit_price) {
-      const quantity = data.quantity || sale.quantity;
-      const unitPrice = data.unit_price || sale.unit_price;
-      data.total_amount = quantity * unitPrice;
-    }
+      const changes = withdrawalService.withoutOverride(data);
+      // Recalculate total if quantity or unit_price changed
+      if (changes.quantity || changes.unit_price) {
+        const quantity = changes.quantity || sale.quantity;
+        const unitPrice = changes.unit_price || sale.unit_price;
+        changes.total_amount = quantity * unitPrice;
+      }
 
-    return await animalSaleRepository.update(id, data);
+      if (changes.sale_date && toDateString(changes.sale_date) !== sale.sale_date) {
+        const override = await withdrawalService.checkSale(
+          { ...sale, sale_date: changes.sale_date },
+          { user, override_reason: data.override_reason },
+          t
+        );
+        Object.assign(changes, override);
+      }
+
+      return await animalSaleRepository.update(sale.id, changes, t);
+    });
+  }
+
+  /**
+   * Sale data to save: the client's fields without override columns, plus
+   * the override if the owner had to give one
+   * @private
+   */
+  async withSaleOverride(data, user, t) {
+    const override = await withdrawalService.checkSale(data, { user, override_reason: data.override_reason }, t);
+    return { ...withdrawalService.withoutOverride(data), ...override };
   }
 
   /**

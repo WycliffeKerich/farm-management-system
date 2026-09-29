@@ -70,8 +70,7 @@ class AnimalProductionController {
 
   async createProductionRecord(req, res, next) {
     try {
-      const userId = req.user?.id;
-      const record = await animalProductionService.createProductionRecord(req.body, userId);
+      const record = await animalProductionService.createProductionRecord(req.body, req.user);
       res.status(201).json({ success: true, data: record });
     } catch (error) {
       next(error);
@@ -80,7 +79,7 @@ class AnimalProductionController {
 
   async updateProductionRecord(req, res, next) {
     try {
-      const record = await animalProductionService.updateProductionRecord(req.params.id, req.body);
+      const record = await animalProductionService.updateProductionRecord(req.params.id, req.body, req.user);
       res.json({ success: true, data: record });
     } catch (error) {
       next(error);

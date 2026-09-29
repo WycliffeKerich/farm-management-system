@@ -28,4 +28,16 @@ function addDays(value, days) {
   return date.toISOString().slice(0, 10);
 }
 
-module.exports = { toDateString, addDays };
+/**
+ * The longer of two optional day counts (a withdrawal period or pre-harvest
+ * interval entered and one on the product's label), or null when neither is given
+ * @param {number|string|null} [a]
+ * @param {number|string|null} [b]
+ * @returns {number|null}
+ */
+function longerInterval(a, b) {
+  const days = [a, b].filter((value) => value !== undefined && value !== null && value !== '').map(Number);
+  return days.length ? Math.max(...days) : null;
+}
+
+module.exports = { toDateString, addDays, longerInterval };

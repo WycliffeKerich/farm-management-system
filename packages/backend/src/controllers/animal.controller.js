@@ -907,8 +907,27 @@ class AnimalController {
   async deleteDiseaseTreatment(req, res, next) {
     try {
       const { id } = req.params;
-      await animalHealthService.deleteDiseaseTreatment(parseInt(id));
+      await animalHealthService.deleteDiseaseTreatment(parseInt(id), req.user.id);
       res.json({ success: true, message: 'Disease/treatment record deleted successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async addTreatmentDose(req, res, next) {
+    try {
+      const dose = await animalHealthService.addDose(parseInt(req.params.id), req.body, req.user.id);
+      res.status(201).json({ success: true, data: dose });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async deleteTreatmentDose(req, res, next) {
+    try {
+      const { id, doseId } = req.params;
+      await animalHealthService.deleteDose(parseInt(id), parseInt(doseId), req.user.id);
+      res.json({ success: true, message: 'Dose deleted successfully' });
     } catch (error) {
       next(error);
     }
@@ -1019,7 +1038,7 @@ class AnimalController {
   async updateFeedRecord(req, res, next) {
     try {
       const { id } = req.params;
-      const record = await animalFeedService.updateFeedRecord(parseInt(id), req.body);
+      const record = await animalFeedService.updateFeedRecord(parseInt(id), req.body, req.user.id);
       res.json({ success: true, data: record });
     } catch (error) {
       next(error);
@@ -1029,7 +1048,7 @@ class AnimalController {
   async deleteFeedRecord(req, res, next) {
     try {
       const { id } = req.params;
-      await animalFeedService.deleteFeedRecord(parseInt(id));
+      await animalFeedService.deleteFeedRecord(parseInt(id), req.user.id);
       res.json({ success: true, message: 'Feed record deleted successfully' });
     } catch (error) {
       next(error);
@@ -1228,7 +1247,7 @@ class AnimalController {
   async createAnimalSale(req, res, next) {
     try {
       const data = { ...req.body, recorded_by: req.user.id };
-      const sale = await animalService.createAnimalSale(data);
+      const sale = await animalService.createAnimalSale(data, req.user);
       res.status(201).json({ success: true, data: sale });
     } catch (error) {
       next(error);
@@ -1238,7 +1257,7 @@ class AnimalController {
   async updateAnimalSale(req, res, next) {
     try {
       const { id } = req.params;
-      const sale = await animalService.updateAnimalSale(parseInt(id), req.body);
+      const sale = await animalService.updateAnimalSale(parseInt(id), req.body, req.user);
       res.json({ success: true, data: sale });
     } catch (error) {
       next(error);

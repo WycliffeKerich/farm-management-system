@@ -453,11 +453,16 @@ router.get(
   animalProductionController.getProductionRecordById.bind(animalProductionController)
 );
 
-router.post('/production/records', animalProductionController.createProductionRecord.bind(animalProductionController));
+router.post(
+  '/production/records',
+  animalValidators.createProductionRecord,
+  validate,
+  animalProductionController.createProductionRecord.bind(animalProductionController)
+);
 
 router.put(
   '/production/records/:id',
-  animalValidators.idParam,
+  animalValidators.updateProductionRecord,
   validate,
   animalProductionController.updateProductionRecord.bind(animalProductionController)
 );
@@ -584,6 +589,22 @@ router.delete(
   animalValidators.idParam,
   validate,
   animalController.deleteDiseaseTreatment.bind(animalController)
+);
+
+router.post(
+  '/diseases-treatments/:id/doses',
+  authorize(['owner', 'manager', 'worker']),
+  animalValidators.addTreatmentDose,
+  validate,
+  animalController.addTreatmentDose.bind(animalController)
+);
+
+router.delete(
+  '/diseases-treatments/:id/doses/:doseId',
+  authorize(['owner', 'manager']),
+  animalValidators.deleteTreatmentDose,
+  validate,
+  animalController.deleteTreatmentDose.bind(animalController)
 );
 
 router.get(

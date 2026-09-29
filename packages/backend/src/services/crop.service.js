@@ -16,15 +16,9 @@ const withdrawalService = require('./withdrawal.service');
 const { db } = require('../config/database');
 const { INVENTORY_REFERENCE_TYPES } = require('../config/constants');
 const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
-const { addDays, toDateString } = require('../utils/dates');
+const { addDays, longerInterval, toDateString } = require('../utils/dates');
 
 const ACTIVE_BATCH_STATUSES = ['planted', 'growing', 'harvesting'];
-
-/** The larger of two optional day counts, or null when neither is given */
-function longerInterval(a, b) {
-  const days = [a, b].filter((value) => value !== undefined && value !== null && value !== '').map(Number);
-  return days.length ? Math.max(...days) : null;
-}
 
 /**
  * Service for crop management operations

@@ -45,6 +45,23 @@ class CropInputApplicationRepository extends BaseRepository {
   }
 
   /**
+   * Every pre-harvest interval running on a date, with its batch
+   * @param {string} date - 'YYYY-MM-DD'
+   * @returns {Promise<Array>}
+   */
+  async findAllPhiHolds(date) {
+    return this.db.any(
+      `SELECT cia.id, cia.batch_id, cb.batch_code, cia.product_name, cia.application_date,
+              cia.safe_harvest_date
+         FROM crop_input_applications cia
+         JOIN crop_batches cb ON cb.id = cia.batch_id AND cb.deleted_at IS NULL
+        WHERE cia.deleted_at IS NULL AND cia.application_date <= $1 AND cia.safe_harvest_date > $1
+        ORDER BY cia.safe_harvest_date DESC, cia.id`,
+      [date]
+    );
+  }
+
+  /**
    * Find applications by type
    * @param {number} batchId - Batch ID
    * @param {string} inputType - Input type (fertilizer, pesticide, herbicide, fungicide)

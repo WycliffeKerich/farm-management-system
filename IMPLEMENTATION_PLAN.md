@@ -419,18 +419,21 @@ Follow-ups (carried into Phase 4):
 
 **Backend:**
 1. ~~Rebase the WIP. Bring the inventory repositories and service onto the Phase 3.5 patterns (tx, whitelists, typed errors, parsed numerics).~~ Done in PR #2.
-2. `suppliers` CRUD. Purchases record supplier, unit cost, batch number and expiry.
-3. **Integration**, each inside one transaction:
-   - **Crop input application** → FEFO usage transaction → cost captured on the application → `safe_harvest_date` recalculated on the batch.
-   - **Feed record** → FEFO usage → cost captured. A group feeding creates one transaction.
-   - **Treatment medications** → usage per medication → withdrawal dates set on the animal or group.
+2. ~~`suppliers` CRUD. Purchases record supplier, unit cost, batch number and expiry.~~ Done.
+3. ~~**Integration**, each inside one transaction:~~ Done.
+   - **Crop input application** → FEFO usage transaction → cost captured on the application → `safe_harvest_date` snapshotted on the application.
+   - **Feed record** → FEFO usage → cost captured. A group feeding creates one transaction. Changing the quantity, unit or date returns the old draw and takes the new one.
+   - **Treatment doses** → usage per dose → withdrawal dates on each dose. The API field is `doses` (routes `POST /animals/diseases-treatments/:id/doses`, `DELETE …/doses/:doseId`), because `medications` is the existing free-text column.
    - Unit conversion via `units_of_measure`: record in the unit used and deduct in the base unit.
-4. **Withdrawal and PHI enforcement:**
-   - Harvest, milk and egg production recording is blocked while under withdrawal.
-   - The owner can override with a reason, and the override is audited (logged via the Phase 5 audit log; until then, stored on the record).
-   - `GET /withdrawals/active`.
+   - Deleting a record returns its stock to the batches it came from (a `return` transaction).
+4. ~~**Withdrawal and PHI enforcement:**~~ Done.
+   - Harvest, milk, egg and meat production recording is blocked (409 `WITHDRAWAL_ACTIVE`, with `safe_from` and the doses behind it) while under withdrawal.
+   - Every animal sale is checked against the meat withdrawal period, since a sold animal may be slaughtered. The owner overrides for breeding stock.
+   - The owner can override with a reason; other roles get 403. The override is stored on the record (`withdrawal_override_reason`, `withdrawal_override_by`) until the Phase 5 audit log.
+   - `GET /withdrawals/active?date=`.
+   - **Design:** nothing is stored on the animal, group or batch. Each dose or application keeps its own safe dates, and a product is held on a date while any record made on or before it has a safe date after it. Back-dated records and deletions stay correct without recalculation. A group is a counted flock: its holds come from the group's own treatments, and an animal's from its own.
 5. Stock valuation (batch cost), reorder report, expiring-soon report.
-6. Start splitting `animal.service.js`: extract `animal-feed.service.js` and `animal-health.service.js`, since both are touched here.
+6. ~~Start splitting `animal.service.js`: extract `animal-feed.service.js` and `animal-health.service.js`, since both are touched here.~~ Done (2,442 → 2,003 lines).
 
 **Frontend:**
 1. Product pickers (autocomplete over inventory items showing stock on hand and unit) in the input application, feed and treatment forms. Free text stays as a fallback option.
@@ -442,6 +445,7 @@ Follow-ups (carried into Phase 4):
 - Integration: application → stock decremented → cost stored → PHI set → harvest blocked → owner override allowed.
 - Rollback: a failed stock deduction leaves no application row.
 - Unit conversion.
+- Done: `crop-inputs.test.js` (9) and `animal-withdrawals.test.js` (12). Backend total 174 tests.
 
 **Deliverables:** every spray, feed and dose deducts stock and carries a cost; harvesting or selling produce under withdrawal is prevented.
 
