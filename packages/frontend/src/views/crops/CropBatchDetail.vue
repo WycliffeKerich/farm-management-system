@@ -4,10 +4,14 @@ import { useRoute, useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import cropService from '@/services/crop.service';
 import { toApiDate } from '@/utils/dates';
+import { validationMessage } from '@/utils/forms';
+import { useStockItems } from '@/composables/useStockItems';
+import ProductPicker from '@/components/inventory/ProductPicker.vue';
 
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
+const stock = useStockItems();
 
 // State
 const loading = ref(true);
@@ -44,7 +48,7 @@ const taskSkipSubmitted = ref(false);
 const newStatus = ref('');
 const observationForm = ref({ observation_date: new Date(), growth_stage: '', health_status: '', notes: '' });
 const harvestForm = ref({ harvest_date: new Date(), quantity: null, unit: 'kg', grade: '', notes: '' });
-const inputForm = ref({ application_date: new Date(), input_type: '', product_name: '', quantity: null, unit: 'ml', application_method: '', target_pest_disease: '', notes: '' });
+const inputForm = ref({ application_date: new Date(), input_type: '', inventory_item_id: null, product_name: '', quantity: null, unit: 'ml', application_method: '', target_pest_disease: '', notes: '' });
 const pestForm = ref({ incident_date: new Date(), type: 'pest', name: '', severity: 'medium', affected_area: '', symptoms: '', control_measures: '' });
 const pestStatusForm = ref({ id: null, status: '', control_measures: '' });
 
@@ -151,9 +155,23 @@ const saveHarvest = async () => {
 };
 
 const openInputDialog = () => {
-    inputForm.value = { application_date: new Date(), input_type: '', product_name: '', quantity: null, unit: 'ml', application_method: '', target_pest_disease: '', notes: '' };
+    inputForm.value = { application_date: new Date(), input_type: '', inventory_item_id: null, product_name: '', quantity: null, unit: 'ml', application_method: '', target_pest_disease: '', notes: '' };
     inputDialog.value = true;
+    stock.load();
 };
+
+// A stock item names the product and sets the unit; clearing it keeps the typed name
+const onInputProductPicked = (item) => {
+    if (!item) return;
+    inputForm.value.product_name = item.name;
+    inputForm.value.unit = item.unit;
+};
+
+const inputUnits = ['ml', 'l', 'g', 'kg', 'tablets'];
+const inputUnitOptions = computed(() => {
+    const unit = inputForm.value.unit;
+    return unit && !inputUnits.includes(unit) ? [...inputUnits, unit] : inputUnits;
+});
 
 const saveInputApplication = async () => {
     if (!inputForm.value.input_type || !inputForm.value.product_name || !inputForm.value.quantity || !inputForm.value.unit) {
@@ -166,9 +184,9 @@ const saveInputApplication = async () => {
         await cropService.recordInputApplication(batch.value.id, data);
         inputDialog.value = false;
         loadBatch();
-        toast.add({ severity: 'success', summary: 'Success', detail: 'Input application recorded', life: 3000 });
+        toast.add({ severity: 'success', summary: 'Success', detail: data.inventory_item_id ? 'Input application recorded and stock drawn' : 'Input application recorded', life: 3000 });
     } catch (error) {
-        toast.add({ severity: 'error', summary: 'Error', detail: error.response?.data?.message || 'Failed to save', life: 3000 });
+        toast.add({ severity: 'error', summary: 'Error', detail: validationMessage(error, 'Failed to save'), life: 5000 });
     } finally {
         saving.value = false;
     }
@@ -825,6 +843,10 @@ onMounted(() => {
                     <Select v-model="inputForm.input_type" :options="inputTypeOptions" optionLabel="label" optionValue="value" class="w-full" />
                 </div>
                 <div class="flex flex-col gap-2">
+                    <label class="font-medium" for="input_item">From Stock</label>
+                    <ProductPicker v-model="inputForm.inventory_item_id" inputId="input_item" use="crop" :items="stock.items.value" :loading="stock.loading.value" @select="onInputProductPicked" />
+                </div>
+                <div class="flex flex-col gap-2">
                     <label class="font-medium">Product Name *</label>
                     <InputText v-model="inputForm.product_name" class="w-full" placeholder="Enter product name" />
                 </div>
@@ -835,7 +857,7 @@ onMounted(() => {
                     </div>
                     <div class="flex flex-col gap-2">
                         <label class="font-medium">Unit *</label>
-                        <Select v-model="inputForm.unit" :options="['ml', 'l', 'g', 'kg', 'tablets']" class="w-full" />
+                        <Select v-model="inputForm.unit" :options="inputUnitOptions" class="w-full" />
                     </div>
                 </div>
                 <div class="flex flex-col gap-2">

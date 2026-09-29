@@ -1,3 +1,5 @@
+import { toApiDate } from '@/utils/dates';
+
 /**
  * Inventory ledger rules, matching the backend (config/constants.js):
  * quantities are magnitudes, purchase and return add stock, adjustment is
@@ -131,6 +133,72 @@ export function summariseUsage(report) {
         net: round(net),
         byReference: [...references].map(([reference_type, quantity]) => ({ reference_type, quantity: round(quantity) }))
     };
+}
+
+/**
+ * '12.5 kg in stock' for a product picker
+ * @param {{ current_stock: number|string, unit: string }} item
+ * @returns {string}
+ */
+export function formatStock(item) {
+    const stock = Math.round((Number(item?.current_stock) || 0) * 100) / 100;
+    return `${stock}${item?.unit ? ` ${item.unit}` : ''} in stock`;
+}
+
+const ANIMAL_PRODUCTS = ['milk', 'meat', 'egg'];
+
+/**
+ * The waiting period an item carries: 'PHI 14 d' for crops, 'Milk 3 d · Meat 28 d' for animals
+ * @param {Object} item - Inventory item
+ * @param {'crop'|'animal'} use - What the product is applied to
+ * @returns {string} Empty when the item has none
+ */
+export function withdrawalSummary(item, use) {
+    if (!item) return '';
+    if (use === 'crop') {
+        return Number(item.pre_harvest_interval_days) > 0 ? `PHI ${item.pre_harvest_interval_days} d` : '';
+    }
+    return ANIMAL_PRODUCTS.filter((product) => Number(item[`${product}_withdrawal_days`]) > 0)
+        .map((product) => `${product[0].toUpperCase()}${product.slice(1)} ${item[`${product}_withdrawal_days`]} d`)
+        .join(' · ');
+}
+
+/**
+ * A blank treatment dose
+ * @param {Date} [administeredDate]
+ * @returns {Object}
+ */
+export function emptyDose(administeredDate = new Date()) {
+    return { inventory_item_id: null, product_name: '', quantity: null, unit: '', administered_date: administeredDate, milk_withdrawal_days: null, meat_withdrawal_days: null, egg_withdrawal_days: null };
+}
+
+/**
+ * Fill a dose from the chosen stock item. The backend keeps the longer of the
+ * dose's and the item's withdrawal days, so the item's days are the floor.
+ * @param {Object} dose
+ * @param {Object|null} item - null when the picker is cleared
+ * @returns {Object}
+ */
+export function applyItemToDose(dose, item) {
+    if (!item) return { ...dose, inventory_item_id: null };
+    const withdrawal = Object.fromEntries(ANIMAL_PRODUCTS.map((product) => [`${product}_withdrawal_days`, item[`${product}_withdrawal_days`] ?? null]));
+    return { ...dose, ...withdrawal, inventory_item_id: item.id, product_name: item.name, unit: item.unit };
+}
+
+/**
+ * The doses array for POST /animals/diseases-treatments, without rows left blank
+ * @param {Array<Object>} doses
+ * @returns {Array<Object>}
+ */
+export function toDosesPayload(doses) {
+    return doses
+        .filter((dose) => dose.quantity > 0 && (dose.inventory_item_id || dose.product_name?.trim()))
+        .map((dose) => ({
+            ...dose,
+            product_name: dose.product_name?.trim() || null,
+            unit: dose.unit || null,
+            administered_date: dose.administered_date ? toApiDate(dose.administered_date) : null
+        }));
 }
 
 export function formatCurrency(value) {

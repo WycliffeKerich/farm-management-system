@@ -439,7 +439,10 @@ Follow-ups (carried into Phase 4):
 6. ~~Start splitting `animal.service.js`: extract `animal-feed.service.js` and `animal-health.service.js`, since both are touched here.~~ Done (2,442 → 2,003 lines).
 
 **Frontend:**
-1. Product pickers (autocomplete over inventory items showing stock on hand and unit) in the input application, feed and treatment forms. Free text stays as a fallback option.
+1. ~~Product pickers (autocomplete over inventory items showing stock on hand and unit) in the input application, feed and treatment forms. Free text stays as a fallback option.~~ Done: `components/inventory/ProductPicker.vue` (filterable by name and code; shows stock on hand and the PHI or withdrawal days) with `composables/useStockItems.js`.
+   - Input applications (list page and batch detail) and feed records send `inventory_item_id`; picking an item fills the name and unit (and the feed's cost per unit). A feed record's item cannot change on edit.
+   - Treatments have a doses section. A new treatment sends `doses`; when editing, each new dose is posted on its own and saved doses can be removed (owner and manager), which returns their stock. The free-text `medications` field stays for anything else.
+   - Save errors in these forms now show the API's validation message. The input application list no longer offers the `growth_regulator` and `other` types, which the table's CHECK constraint rejects.
 2. Withdrawal/PHI badges on batch, animal and group detail pages; a warning dialog when recording a harvest or production during withdrawal.
 3. Supplier management; purchase form with batch and expiry; valuation and reorder views.
 4. Adopt `useLazyTable` for the inventory lists (server-side pagination).

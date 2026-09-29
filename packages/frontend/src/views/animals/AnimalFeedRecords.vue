@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import animalService from '@/services/animal.service';
 import Button from 'primevue/button';
@@ -13,8 +13,12 @@ import Select from 'primevue/select';
 import DatePicker from 'primevue/datepicker';
 import RadioButton from 'primevue/radiobutton';
 import { toApiDate } from '@/utils/dates';
+import { validationMessage } from '@/utils/forms';
+import { useStockItems } from '@/composables/useStockItems';
+import ProductPicker from '@/components/inventory/ProductPicker.vue';
 
 const toast = useToast();
+const stock = useStockItems();
 
 // State
 const records = ref([]);
@@ -46,6 +50,7 @@ const recordForm = ref({
     animal_id: null,
     animal_group_id: null,
     feed_type: '',
+    inventory_item_id: null,
     feed_name: '',
     quantity: null,
     unit: 'kg',
@@ -54,7 +59,13 @@ const recordForm = ref({
     notes: ''
 });
 
-const unitOptions = ['kg', 'g', 'lbs', 'bags', 'sacks', 'bales', 'liters'];
+const units = ['kg', 'g', 'lbs', 'bags', 'sacks', 'bales', 'liters'];
+
+// The picked item's unit may not be one of the usual ones
+const unitOptions = computed(() => {
+    const unit = recordForm.value.unit;
+    return unit && !units.includes(unit) ? [...units, unit] : units;
+});
 
 // Methods
 const loadRecords = async () => {
@@ -126,6 +137,7 @@ const openNewRecordDialog = () => {
         animal_id: null,
         animal_group_id: null,
         feed_type: '',
+        inventory_item_id: null,
         feed_name: '',
         quantity: null,
         unit: 'kg',
@@ -136,6 +148,16 @@ const openNewRecordDialog = () => {
     sourceType.value = 'individual';
     submitted.value = false;
     recordDialog.value = true;
+    stock.load();
+};
+
+// A stock item names the feed and sets the unit and cost; clearing it keeps the typed name
+const onFeedPicked = (item) => {
+    if (!item) return;
+    recordForm.value.feed_name = item.name;
+    recordForm.value.unit = item.unit;
+    const cost = Number(item.cost_per_unit ?? item.unit_cost);
+    if (cost > 0 && !recordForm.value.cost_per_unit) recordForm.value.cost_per_unit = cost;
 };
 
 const editRecord = (record) => {
@@ -146,6 +168,7 @@ const editRecord = (record) => {
         animal_id: record.animal_id,
         animal_group_id: record.animal_group_id,
         feed_type: record.feed_type || '',
+        inventory_item_id: record.inventory_item_id || null,
         feed_name: record.feed_name || '',
         quantity: record.quantity,
         unit: record.unit,
@@ -156,6 +179,7 @@ const editRecord = (record) => {
     sourceType.value = record.animal_id ? 'individual' : 'group';
     submitted.value = false;
     recordDialog.value = true;
+    if (record.inventory_item_id) stock.load();
 };
 
 const calculateTotalCost = () => {
@@ -191,7 +215,7 @@ const saveRecord = async () => {
             toast.add({ severity: 'success', summary: 'Success', detail: 'Feed record updated', life: 3000 });
         } else {
             await animalService.createFeedRecord(data);
-            toast.add({ severity: 'success', summary: 'Success', detail: 'Feed record created', life: 3000 });
+            toast.add({ severity: 'success', summary: 'Success', detail: data.inventory_item_id ? 'Feed record created and stock drawn' : 'Feed record created', life: 3000 });
         }
 
         recordDialog.value = false;
@@ -201,8 +225,8 @@ const saveRecord = async () => {
         toast.add({
             severity: 'error',
             summary: 'Error',
-            detail: error.response?.data?.message || 'Failed to save feed record',
-            life: 3000
+            detail: validationMessage(error, 'Failed to save feed record'),
+            life: 5000
         });
     } finally {
         saving.value = false;
@@ -471,6 +495,12 @@ onMounted(() => {
                         :class="{ 'p-invalid': submitted && !recordForm.animal_group_id }"
                     />
                     <small class="p-error" v-if="submitted && !recordForm.animal_group_id && sourceType === 'group'"> Group is required </small>
+                </div>
+
+                <div class="flex flex-col gap-2">
+                    <label for="feed_item">From Stock</label>
+                    <ProductPicker v-model="recordForm.inventory_item_id" inputId="feed_item" :items="stock.items.value" :loading="stock.loading.value" :disabled="!!recordForm.id" @select="onFeedPicked" />
+                    <small v-if="recordForm.id && recordForm.inventory_item_id" class="text-surface-500">Changing the quantity, unit or date puts the old amount back in stock and draws the new one.</small>
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">

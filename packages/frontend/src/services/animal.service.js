@@ -430,6 +430,16 @@ const animalService = {
         return api.delete(`/animals/diseases-treatments/${id}`);
     },
 
+    /** A dose given under a treatment; one taken from stock draws it */
+    addTreatmentDose(treatmentId, data) {
+        return api.post(`/animals/diseases-treatments/${treatmentId}/doses`, data);
+    },
+
+    /** Remove a dose; stock it used goes back */
+    deleteTreatmentDose(treatmentId, doseId) {
+        return api.delete(`/animals/diseases-treatments/${treatmentId}/doses/${doseId}`);
+    },
+
     getDiseaseStatistics(params = {}) {
         return api.get('/animals/diseases-treatments/statistics', { params });
     },
