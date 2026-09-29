@@ -1,4 +1,5 @@
 const inventoryService = require('../services/inventory.service');
+const inventoryReportService = require('../services/inventory-report.service');
 
 /**
  * Controller for inventory management endpoints
@@ -66,6 +67,44 @@ class InventoryController {
     }
   }
 
+  // ==================== REPORTS ====================
+
+  /**
+   * Stock valuation at batch cost
+   */
+  async getValuationReport(req, res, next) {
+    try {
+      const report = await inventoryReportService.valuation({ category_id: req.query.category_id });
+      res.json({ success: true, data: report });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Items to reorder
+   */
+  async getReorderReport(req, res, next) {
+    try {
+      const report = await inventoryReportService.reorder(req.query.usage_days || undefined);
+      res.json({ success: true, data: report });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Stock expiring soon, and expired stock not yet written off
+   */
+  async getExpiringReport(req, res, next) {
+    try {
+      const report = await inventoryReportService.expiring(req.query.days || undefined);
+      res.json({ success: true, data: report });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // ==================== ITEMS ====================
 
   /**
@@ -74,16 +113,17 @@ class InventoryController {
   async getItems(req, res, next) {
     try {
       const { page, limit, category_id, search, low_stock, expiring_days } = req.query;
+      const filters = { category_id, search, low_stock: low_stock === 'true', expiring_days };
 
       if (page || limit) {
         const result = await inventoryService.paginateItems(
           parseInt(page, 10) || 1,
           parseInt(limit, 10) || 20,
-          { category_id, search, low_stock: low_stock === 'true', expiring_days }
+          filters
         );
         res.json({ success: true, ...result });
       } else {
-        const items = await inventoryService.getAllItems({ category_id, search });
+        const items = await inventoryService.getAllItems(filters);
         res.json({ success: true, data: items });
       }
     } catch (error) {

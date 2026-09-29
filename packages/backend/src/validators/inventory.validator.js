@@ -289,6 +289,18 @@ const inventoryValidators = {
       .isInt({ min: 1, max: 365 }).withMessage('Days must be between 1 and 365'),
   ],
 
+  valuationReportFilters: [
+    query('category_id')
+      .optional()
+      .isInt().withMessage('Category ID must be an integer'),
+  ],
+
+  reorderReportFilters: [
+    query('usage_days')
+      .optional()
+      .isInt({ min: 7, max: 365 }).withMessage('usage_days must be between 7 and 365'),
+  ],
+
   // ==================== UNIT OF MEASURE VALIDATORS ====================
 
   createUnit: [

@@ -1,6 +1,52 @@
 const BaseRepository = require('./base.repository');
 
 /**
+ * WHERE conditions (on alias ii) for the item list filters
+ * @param {Object} filters
+ * @param {number} [filters.category_id]
+ * @param {string} [filters.search] - Part of the name or item code
+ * @param {boolean} [filters.low_stock] - Only items at or below a set minimum stock
+ * @param {number} [filters.expiring_days] - Only items with stock that expires within this
+ *   many days: a live batch expiring, or the item's own expiry date on stock held
+ * @returns {{where: string, values: Array}}
+ */
+function itemFilters(filters = {}) {
+  const conditions = ['ii.deleted_at IS NULL'];
+  const values = [];
+  const param = (value) => {
+    values.push(value);
+    return `$${values.length}`;
+  };
+
+  if (filters.category_id) {
+    conditions.push(`ii.category_id = ${param(filters.category_id)}`);
+  }
+  if (filters.search) {
+    const search = param(`%${filters.search}%`);
+    conditions.push(`(ii.name ILIKE ${search} OR ii.item_code ILIKE ${search})`);
+  }
+  if (filters.low_stock) {
+    conditions.push('ii.minimum_stock > 0 AND ii.current_stock <= ii.minimum_stock');
+  }
+  if (filters.expiring_days) {
+    const days = param(filters.expiring_days);
+    conditions.push(`(
+      (ii.current_stock > 0 AND ii.expiry_date BETWEEN CURRENT_DATE AND CURRENT_DATE + ${days}::int)
+      OR EXISTS (
+        SELECT 1 FROM inventory_batches ib
+         WHERE ib.inventory_item_id = ii.id
+           AND ib.deleted_at IS NULL
+           AND ib.status = 'active'
+           AND ib.quantity > 0
+           AND ib.expiry_date BETWEEN CURRENT_DATE AND CURRENT_DATE + ${days}::int
+      )
+    )`);
+  }
+
+  return { where: conditions.join(' AND '), values };
+}
+
+/**
  * Repository for inventory items
  *
  * current_stock is not writable through create/update: it only changes
@@ -68,34 +114,20 @@ class InventoryItemRepository extends BaseRepository {
 
   /**
    * Find all items with category info
-   * @param {Object} filters - Optional filters
+   * @param {Object} filters - category_id, search, low_stock, expiring_days (see itemFilters)
    * @returns {Promise<Array>} Items with category info
    */
   async findAllWithCategory(filters = {}) {
-    let query = `
+    const { where, values } = itemFilters(filters);
+    const query = `
       SELECT
         ii.*,
         ic.name as category_name
       FROM ${this.tableName} ii
       JOIN inventory_categories ic ON ii.category_id = ic.id
-      WHERE ii.deleted_at IS NULL
+      WHERE ${where}
+      ORDER BY ii.name ASC
     `;
-    const values = [];
-    let paramIndex = 1;
-
-    if (filters.category_id) {
-      query += ` AND ii.category_id = $${paramIndex++}`;
-      values.push(filters.category_id);
-    }
-
-    if (filters.search) {
-      query += ` AND (LOWER(ii.name) LIKE LOWER($${paramIndex}) OR LOWER(ii.item_code) LIKE LOWER($${paramIndex}))`;
-      values.push(`%${filters.search}%`);
-      paramIndex++;
-    }
-
-    query += ' ORDER BY ii.name ASC';
-
     return this.db.any(query, values);
   }
 
@@ -209,61 +241,28 @@ class InventoryItemRepository extends BaseRepository {
    * Paginate items with category info and filters
    * @param {number} page - Page number
    * @param {number} limit - Records per page
-   * @param {Object} filters - Filters (category_id, search, low_stock, expiring)
+   * @param {Object} filters - category_id, search, low_stock, expiring_days (see itemFilters)
    * @returns {Promise<Object>} Paginated results
    */
   async paginateWithFilters(page = 1, limit = 20, filters = {}) {
     const offset = (page - 1) * limit;
-    let query = `
+    const { where, values } = itemFilters(filters);
+    const query = `
       SELECT
         ii.*,
         ic.name as category_name
       FROM ${this.tableName} ii
       JOIN inventory_categories ic ON ii.category_id = ic.id
-      WHERE ii.deleted_at IS NULL
+      WHERE ${where}
+      ORDER BY ii.name ASC
+      LIMIT $${values.length + 1} OFFSET $${values.length + 2}
     `;
-    let countQuery = `
-      SELECT COUNT(*) as count
-      FROM ${this.tableName} ii
-      WHERE ii.deleted_at IS NULL
-    `;
-    const values = [];
-    const countValues = [];
-    let paramIndex = 1;
-    let countParamIndex = 1;
+    const countQuery = `SELECT COUNT(*) as count FROM ${this.tableName} ii WHERE ${where}`;
 
-    if (filters.category_id) {
-      query += ` AND ii.category_id = $${paramIndex++}`;
-      countQuery += ` AND ii.category_id = $${countParamIndex++}`;
-      values.push(filters.category_id);
-      countValues.push(filters.category_id);
-    }
-
-    if (filters.search) {
-      query += ` AND (LOWER(ii.name) LIKE LOWER($${paramIndex}) OR LOWER(ii.item_code) LIKE LOWER($${paramIndex}))`;
-      countQuery += ` AND (LOWER(ii.name) LIKE LOWER($${countParamIndex}) OR LOWER(ii.item_code) LIKE LOWER($${countParamIndex}))`;
-      values.push(`%${filters.search}%`);
-      countValues.push(`%${filters.search}%`);
-      paramIndex++;
-      countParamIndex++;
-    }
-
-    if (filters.low_stock) {
-      query += ' AND ii.minimum_stock IS NOT NULL AND ii.minimum_stock > 0 AND ii.current_stock <= ii.minimum_stock';
-      countQuery += ' AND ii.minimum_stock IS NOT NULL AND ii.minimum_stock > 0 AND ii.current_stock <= ii.minimum_stock';
-    }
-
-    if (filters.expiring_days) {
-      query += ` AND ii.expiry_date IS NOT NULL AND ii.expiry_date <= CURRENT_DATE + $${paramIndex++}::int AND ii.expiry_date >= CURRENT_DATE`;
-      countQuery += ` AND ii.expiry_date IS NOT NULL AND ii.expiry_date <= CURRENT_DATE + $${countParamIndex++}::int AND ii.expiry_date >= CURRENT_DATE`;
-      values.push(filters.expiring_days);
-      countValues.push(filters.expiring_days);
-    }
-
-    query += ` ORDER BY ii.name ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
-    values.push(limit, offset);
-
-    const [data, countResult] = await Promise.all([this.db.any(query, values), this.db.one(countQuery, countValues)]);
+    const [data, countResult] = await Promise.all([
+      this.db.any(query, [...values, limit, offset]),
+      this.db.one(countQuery, values),
+    ]);
 
     const total = parseInt(countResult.count, 10);
 

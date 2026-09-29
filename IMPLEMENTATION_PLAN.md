@@ -408,7 +408,7 @@ Follow-ups (carried into Phase 4):
 - **Frontend tests for views:** the coverage gate covers only the session and routing core. Extend `coverage.include` as views and stores get tests (start with the user management and inventory transaction forms).
 - **FEFO for every outgoing movement:** only "usage" on the item screen draws from batches. Waste, expiry and usage recorded elsewhere reduce item stock but not batch quantities, so batch totals can exceed item stock (the reconcile check reports this). Route all outgoing movements for batch-tracked items through FEFO in Phase 4.
 - **Display-side dates outside inventory:** some crop and animal views still display DATE strings with `new Date('YYYY-MM-DD')`, which shows the previous day west of UTC. This doesn't affect Nairobi. Switch them to `fromApiDate` when those views are next touched.
-- **Unpaged items endpoint:** `GET /inventory/items` without `page` ignores `low_stock` and `expiring_days`. The item list filters on the client for now. Make the endpoint honour the filters, or page the list, in Phase 4.
+- ~~**Unpaged items endpoint:** `GET /inventory/items` without `page` ignores `low_stock` and `expiring_days`.~~ Done in Phase 4: paged and unpaged lists share one filter builder, and `expiring_days` also matches live batches expiring in the window (the item list can drop its client-side filtering).
 
 ---
 
@@ -432,7 +432,10 @@ Follow-ups (carried into Phase 4):
    - The owner can override with a reason; other roles get 403. The override is stored on the record (`withdrawal_override_reason`, `withdrawal_override_by`) until the Phase 5 audit log.
    - `GET /withdrawals/active?date=`.
    - **Design:** nothing is stored on the animal, group or batch. Each dose or application keeps its own safe dates, and a product is held on a date while any record made on or before it has a safe date after it. Back-dated records and deletions stay correct without recalculation. A group is a counted flock: its holds come from the group's own treatments, and an animal's from its own.
-5. Stock valuation (batch cost), reorder report, expiring-soon report.
+5. ~~Stock valuation (batch cost), reorder report, expiring-soon report.~~ Done: `GET /inventory/reports/valuation?category_id=`, `/reports/reorder?usage_days=`, `/reports/expiring?days=` (owner and manager).
+   - **Valuation:** stock in a batch is valued at that batch's unit cost; stock held outside any batch at the item's cost per unit. Stock with no cost is reported as uncosted, not guessed. Expired and quarantined batches count until written off. The dashboard summary's values now come from the same calculation.
+   - **Reorder:** items at or below a set minimum, with net usage (usage less returns) averaged over `usage_days` (default 30), days of cover, the default supplier, and a suggested quantity: the item's `reorder_quantity`, or else enough to reach twice the minimum.
+   - **Expiring:** batches holding stock that expire within `days` (default 30), and expired stock not yet written off, with the value at risk. Unbatched stock goes by the item's expiry date.
 6. ~~Start splitting `animal.service.js`: extract `animal-feed.service.js` and `animal-health.service.js`, since both are touched here.~~ Done (2,442 → 2,003 lines).
 
 **Frontend:**
@@ -445,7 +448,7 @@ Follow-ups (carried into Phase 4):
 - Integration: application → stock decremented → cost stored → PHI set → harvest blocked → owner override allowed.
 - Rollback: a failed stock deduction leaves no application row.
 - Unit conversion.
-- Done: `crop-inputs.test.js` (9) and `animal-withdrawals.test.js` (12). Backend total 174 tests.
+- Done: `crop-inputs.test.js` (9), `animal-withdrawals.test.js` (12) and `inventory-reports.test.js` (7). Backend total 181 tests.
 
 **Deliverables:** every spray, feed and dose deducts stock and carries a cost; harvesting or selling produce under withdrawal is prevented.
 

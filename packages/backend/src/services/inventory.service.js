@@ -4,6 +4,7 @@ const inventoryTransactionRepository = require('../repositories/inventory-transa
 const inventoryBatchRepository = require('../repositories/inventory-batch.repository');
 const unitOfMeasureRepository = require('../repositories/unit-of-measure.repository');
 const supplierRepository = require('../repositories/supplier.repository');
+const inventoryReportService = require('./inventory-report.service');
 const { db } = require('../config/database');
 const { NotFoundError, ValidationError, ConflictError } = require('../utils/errors');
 const { INVENTORY_TRANSACTION_TYPES, INVENTORY_OUTGOING_TYPES } = require('../config/constants');
@@ -751,17 +752,21 @@ class InventoryService {
    * @returns {Promise<Object>} Summary statistics
    */
   async getInventorySummary() {
-    const categories = await inventoryCategoryRepository.findAllWithItemCounts();
-    const lowStockItems = await inventoryItemRepository.findLowStock();
-    const expiringItems = await inventoryItemRepository.findExpiring(30);
-    const expiringBatches = await inventoryBatchRepository.findExpiring(30);
+    const [categories, lowStockItems, expiringItems, expiringBatches, valuation] = await Promise.all([
+      inventoryCategoryRepository.findAllWithItemCounts(),
+      inventoryItemRepository.findLowStock(),
+      inventoryItemRepository.findExpiring(30),
+      inventoryBatchRepository.findExpiring(30),
+      inventoryReportService.valuation(),
+    ]);
 
+    // Values are at batch cost, as in the valuation report
+    const categoryValues = new Map(valuation.categories.map((cat) => [cat.category_id, cat.value]));
     const totalItems = categories.reduce((sum, cat) => sum + parseInt(cat.item_count, 10), 0);
-    const totalValue = categories.reduce((sum, cat) => sum + parseFloat(cat.total_value || 0), 0);
 
     return {
       total_items: totalItems,
-      total_value: totalValue,
+      total_value: valuation.total_value,
       low_stock_count: lowStockItems.length,
       expiring_count: expiringItems.length,
       expiring_batches_count: expiringBatches.length,
@@ -769,7 +774,7 @@ class InventoryService {
         id: cat.id,
         name: cat.name,
         item_count: parseInt(cat.item_count, 10),
-        total_value: parseFloat(cat.total_value || 0),
+        total_value: categoryValues.get(cat.id) || 0,
       })),
     };
   }

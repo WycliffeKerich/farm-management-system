@@ -29,6 +29,32 @@ router.get(
   inventoryController.getExpiringItems.bind(inventoryController)
 );
 
+// ==================== REPORTS ====================
+
+router.get(
+  '/reports/valuation',
+  authorize(['owner', 'manager']),
+  inventoryValidators.valuationReportFilters,
+  validate,
+  inventoryController.getValuationReport.bind(inventoryController)
+);
+
+router.get(
+  '/reports/reorder',
+  authorize(['owner', 'manager']),
+  inventoryValidators.reorderReportFilters,
+  validate,
+  inventoryController.getReorderReport.bind(inventoryController)
+);
+
+router.get(
+  '/reports/expiring',
+  authorize(['owner', 'manager']),
+  inventoryValidators.expiringFilters,
+  validate,
+  inventoryController.getExpiringReport.bind(inventoryController)
+);
+
 // ==================== CATEGORIES ====================
 
 router.get(
