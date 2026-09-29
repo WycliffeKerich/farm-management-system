@@ -316,7 +316,7 @@ class AnimalRepository extends BaseRepository {
 
     const [countResult, data] = await Promise.all([
       this.db.one(countQuery, values.slice(0, -2)),
-      this.db.any(dataQuery, values)
+      this.db.any(dataQuery, values),
     ]);
 
     const total = parseInt(countResult.count, 10);
@@ -327,8 +327,8 @@ class AnimalRepository extends BaseRepository {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit)
-      }
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 
@@ -351,7 +351,7 @@ class AnimalRepository extends BaseRepository {
     const animalData = {
       ...data,
       status: 'active',
-      acquisition_type: data.acquisition_type || 'purchased'
+      acquisition_type: data.acquisition_type || 'purchased',
     };
     return await this.create(animalData);
   }

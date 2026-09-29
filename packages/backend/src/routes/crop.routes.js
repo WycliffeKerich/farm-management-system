@@ -10,22 +10,11 @@ router.use(authenticate);
 
 // ==================== CROP TYPES ====================
 
-router.get(
-  '/crop-types',
-  cropController.getCropTypes.bind(cropController)
-);
+router.get('/crop-types', cropController.getCropTypes.bind(cropController));
 
-router.get(
-  '/crop-types/categories',
-  cropController.getCropTypeCategories.bind(cropController)
-);
+router.get('/crop-types/categories', cropController.getCropTypeCategories.bind(cropController));
 
-router.get(
-  '/crop-types/:id',
-  cropValidators.idParam,
-  validate,
-  cropController.getCropTypeById.bind(cropController)
-);
+router.get('/crop-types/:id', cropValidators.idParam, validate, cropController.getCropTypeById.bind(cropController));
 
 router.post(
   '/crop-types',
@@ -53,17 +42,9 @@ router.delete(
 
 // ==================== CROP VARIETIES ====================
 
-router.get(
-  '/varieties',
-  cropController.getVarieties.bind(cropController)
-);
+router.get('/varieties', cropController.getVarieties.bind(cropController));
 
-router.get(
-  '/varieties/:id',
-  cropValidators.idParam,
-  validate,
-  cropController.getVarietyById.bind(cropController)
-);
+router.get('/varieties/:id', cropValidators.idParam, validate, cropController.getVarietyById.bind(cropController));
 
 router.post(
   '/varieties',
@@ -91,22 +72,11 @@ router.delete(
 
 // ==================== GROWING LOCATIONS ====================
 
-router.get(
-  '/locations',
-  cropController.getLocations.bind(cropController)
-);
+router.get('/locations', cropController.getLocations.bind(cropController));
 
-router.get(
-  '/locations/types',
-  cropController.getLocationTypes.bind(cropController)
-);
+router.get('/locations/types', cropController.getLocationTypes.bind(cropController));
 
-router.get(
-  '/locations/:id',
-  cropValidators.idParam,
-  validate,
-  cropController.getLocationById.bind(cropController)
-);
+router.get('/locations/:id', cropValidators.idParam, validate, cropController.getLocationById.bind(cropController));
 
 router.post(
   '/locations',
@@ -134,38 +104,15 @@ router.delete(
 
 // ==================== CROP BATCHES ====================
 
-router.get(
-  '/batches',
-  cropValidators.batchFilters,
-  validate,
-  cropController.getBatches.bind(cropController)
-);
+router.get('/batches', cropValidators.batchFilters, validate, cropController.getBatches.bind(cropController));
 
-router.get(
-  '/batches/statistics',
-  cropController.getBatchStatistics.bind(cropController)
-);
+router.get('/batches/statistics', cropController.getBatchStatistics.bind(cropController));
 
-router.get(
-  '/batches/:id',
-  cropValidators.idParam,
-  validate,
-  cropController.getBatchById.bind(cropController)
-);
+router.get('/batches/:id', cropValidators.idParam, validate, cropController.getBatchById.bind(cropController));
 
-router.post(
-  '/batches',
-  cropValidators.createBatch,
-  validate,
-  cropController.createBatch.bind(cropController)
-);
+router.post('/batches', cropValidators.createBatch, validate, cropController.createBatch.bind(cropController));
 
-router.put(
-  '/batches/:id',
-  cropValidators.updateBatch,
-  validate,
-  cropController.updateBatch.bind(cropController)
-);
+router.put('/batches/:id', cropValidators.updateBatch, validate, cropController.updateBatch.bind(cropController));
 
 router.patch(
   '/batches/:id/status',
@@ -208,12 +155,7 @@ router.delete(
 
 // ==================== HARVESTS ====================
 
-router.get(
-  '/harvests',
-  cropValidators.harvestFilters,
-  validate,
-  cropController.getAllHarvests.bind(cropController)
-);
+router.get('/harvests', cropValidators.harvestFilters, validate, cropController.getAllHarvests.bind(cropController));
 
 router.get(
   '/harvests/summary',
@@ -246,10 +188,7 @@ router.delete(
 
 // ==================== INPUT APPLICATIONS ====================
 
-router.get(
-  '/input-applications',
-  cropController.getAllInputApplications.bind(cropController)
-);
+router.get('/input-applications', cropController.getAllInputApplications.bind(cropController));
 
 router.get(
   '/batches/:batchId/input-applications',
@@ -282,15 +221,9 @@ router.get(
   cropController.getAllPestsDiseases.bind(cropController)
 );
 
-router.get(
-  '/pests-diseases/statistics',
-  cropController.getPestDiseaseStatistics.bind(cropController)
-);
+router.get('/pests-diseases/statistics', cropController.getPestDiseaseStatistics.bind(cropController));
 
-router.get(
-  '/pests-diseases/alerts',
-  cropController.getActiveAlerts.bind(cropController)
-);
+router.get('/pests-diseases/alerts', cropController.getActiveAlerts.bind(cropController));
 
 router.get(
   '/batches/:batchId/pests-diseases',
@@ -323,17 +256,9 @@ router.delete(
 
 // ==================== CARE PLANS ====================
 
-router.get(
-  '/care-plans',
-  cropController.getCarePlans.bind(cropController)
-);
+router.get('/care-plans', cropController.getCarePlans.bind(cropController));
 
-router.get(
-  '/care-plans/:id',
-  cropValidators.idParam,
-  validate,
-  cropController.getCarePlanById.bind(cropController)
-);
+router.get('/care-plans/:id', cropValidators.idParam, validate, cropController.getCarePlanById.bind(cropController));
 
 router.post(
   '/care-plans',
@@ -402,15 +327,9 @@ router.delete(
 
 // ==================== BATCH CARE SCHEDULES ====================
 
-router.get(
-  '/care-schedules',
-  cropController.getAllBatchSchedules.bind(cropController)
-);
+router.get('/care-schedules', cropController.getAllBatchSchedules.bind(cropController));
 
-router.get(
-  '/care-schedules/alerts',
-  cropController.getCareAlertsSummary.bind(cropController)
-);
+router.get('/care-schedules/alerts', cropController.getCareAlertsSummary.bind(cropController));
 
 router.get(
   '/batches/:batchId/care-schedule',
@@ -436,15 +355,9 @@ router.delete(
 
 // ==================== SCHEDULED TASKS ====================
 
-router.get(
-  '/scheduled-tasks',
-  cropController.getScheduledTasks.bind(cropController)
-);
+router.get('/scheduled-tasks', cropController.getScheduledTasks.bind(cropController));
 
-router.get(
-  '/scheduled-tasks/calendar',
-  cropController.getScheduledTasksCalendar.bind(cropController)
-);
+router.get('/scheduled-tasks/calendar', cropController.getScheduledTasksCalendar.bind(cropController));
 
 router.post(
   '/scheduled-tasks/update-statuses',

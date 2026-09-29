@@ -109,10 +109,7 @@ class CarePlanRepository extends BaseRepository {
       ORDER BY cpt.days_from_planting, cpt.task_sequence
     `;
 
-    const [plan, tasks] = await Promise.all([
-      this.db.oneOrNone(planQuery, [id]),
-      this.db.any(tasksQuery, [id])
-    ]);
+    const [plan, tasks] = await Promise.all([this.db.oneOrNone(planQuery, [id]), this.db.any(tasksQuery, [id])]);
 
     if (plan) {
       plan.tasks = tasks;
@@ -147,12 +144,13 @@ class CarePlanRepository extends BaseRepository {
       is_template: true,
       total_duration_days: original.total_duration_days,
       status: 'draft',
-      created_by: userId
+      created_by: userId,
     });
 
     // Clone tasks
     for (const task of original.tasks) {
-      await this.db.none(`
+      await this.db.none(
+        `
         INSERT INTO crop_care_plan_tasks (
           plan_id, task_sequence, task_name, description, task_category_id,
           days_from_planting, tolerance_days_before, tolerance_days_after,
@@ -162,13 +160,30 @@ class CarePlanRepository extends BaseRepository {
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
         )
-      `, [
-        newPlan.id, task.task_sequence, task.task_name, task.description, task.task_category_id,
-        task.days_from_planting, task.tolerance_days_before, task.tolerance_days_after,
-        task.is_recurring, task.recurrence_interval_days, task.recurrence_end_days, task.recurrence_start_days,
-        task.priority, task.estimated_hours, task.input_type, task.input_product_name,
-        task.input_quantity, task.input_unit, task.input_application_method, task.notes
-      ]);
+      `,
+        [
+          newPlan.id,
+          task.task_sequence,
+          task.task_name,
+          task.description,
+          task.task_category_id,
+          task.days_from_planting,
+          task.tolerance_days_before,
+          task.tolerance_days_after,
+          task.is_recurring,
+          task.recurrence_interval_days,
+          task.recurrence_end_days,
+          task.recurrence_start_days,
+          task.priority,
+          task.estimated_hours,
+          task.input_type,
+          task.input_product_name,
+          task.input_quantity,
+          task.input_unit,
+          task.input_application_method,
+          task.notes,
+        ]
+      );
     }
 
     return await this.findWithTasks(newPlan.id);

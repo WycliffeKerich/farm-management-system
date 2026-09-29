@@ -238,12 +238,12 @@ class AnimalGroupRepository extends BaseRepository {
       details.unit_value || null,
       details.total_value || null,
       details.notes || null,
-      details.recorded_by || null
+      details.recorded_by || null,
     ]);
 
     return {
       group: await this.findByIdWithDetails(id),
-      adjustment: adjustmentRecord
+      adjustment: adjustmentRecord,
     };
   }
 
@@ -369,7 +369,7 @@ class AnimalGroupRepository extends BaseRepository {
 
     const [countResult, data] = await Promise.all([
       this.db.one(countQuery, values.slice(0, -2)),
-      this.db.any(dataQuery, values)
+      this.db.any(dataQuery, values),
     ]);
 
     const total = parseInt(countResult.count, 10);
@@ -380,8 +380,8 @@ class AnimalGroupRepository extends BaseRepository {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit)
-      }
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 

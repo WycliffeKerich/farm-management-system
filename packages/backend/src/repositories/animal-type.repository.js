@@ -55,10 +55,7 @@ class AnimalTypeRepository extends BaseRepository {
       ORDER BY name
     `;
 
-    const [type, breeds] = await Promise.all([
-      this.db.oneOrNone(typeQuery, [id]),
-      this.db.any(breedsQuery, [id])
-    ]);
+    const [type, breeds] = await Promise.all([this.db.oneOrNone(typeQuery, [id]), this.db.any(breedsQuery, [id])]);
 
     if (type) {
       type.breeds = breeds;
@@ -79,7 +76,7 @@ class AnimalTypeRepository extends BaseRepository {
       ORDER BY category
     `;
     const result = await this.db.any(query);
-    return result.map(r => r.category);
+    return result.map((r) => r.category);
   }
 
   /**

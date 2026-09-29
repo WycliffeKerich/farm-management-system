@@ -10,22 +10,11 @@ router.use(authenticate);
 
 // ==================== ANIMAL TYPES ====================
 
-router.get(
-  '/types',
-  animalController.getAnimalTypes.bind(animalController)
-);
+router.get('/types', animalController.getAnimalTypes.bind(animalController));
 
-router.get(
-  '/types/categories',
-  animalController.getAnimalTypeCategories.bind(animalController)
-);
+router.get('/types/categories', animalController.getAnimalTypeCategories.bind(animalController));
 
-router.get(
-  '/types/:id',
-  animalValidators.idParam,
-  validate,
-  animalController.getAnimalTypeById.bind(animalController)
-);
+router.get('/types/:id', animalValidators.idParam, validate, animalController.getAnimalTypeById.bind(animalController));
 
 router.post(
   '/types',
@@ -53,17 +42,9 @@ router.delete(
 
 // ==================== ANIMAL BREEDS ====================
 
-router.get(
-  '/breeds',
-  animalController.getBreeds.bind(animalController)
-);
+router.get('/breeds', animalController.getBreeds.bind(animalController));
 
-router.get(
-  '/breeds/:id',
-  animalValidators.idParam,
-  validate,
-  animalController.getBreedById.bind(animalController)
-);
+router.get('/breeds/:id', animalValidators.idParam, validate, animalController.getBreedById.bind(animalController));
 
 router.post(
   '/breeds',
@@ -91,22 +72,11 @@ router.delete(
 
 // ==================== ANIMAL HOUSING ====================
 
-router.get(
-  '/housing',
-  animalController.getHousing.bind(animalController)
-);
+router.get('/housing', animalController.getHousing.bind(animalController));
 
-router.get(
-  '/housing/types',
-  animalController.getHousingTypes.bind(animalController)
-);
+router.get('/housing/types', animalController.getHousingTypes.bind(animalController));
 
-router.get(
-  '/housing/:id',
-  animalValidators.idParam,
-  validate,
-  animalController.getHousingById.bind(animalController)
-);
+router.get('/housing/:id', animalValidators.idParam, validate, animalController.getHousingById.bind(animalController));
 
 router.post(
   '/housing',
@@ -141,15 +111,9 @@ router.get(
   animalController.getAnimals.bind(animalController)
 );
 
-router.get(
-  '/individuals/statistics',
-  animalController.getAnimalStatistics.bind(animalController)
-);
+router.get('/individuals/statistics', animalController.getAnimalStatistics.bind(animalController));
 
-router.get(
-  '/individuals/breeding-stock',
-  animalController.getBreedingStock.bind(animalController)
-);
+router.get('/individuals/breeding-stock', animalController.getBreedingStock.bind(animalController));
 
 router.get(
   '/individuals/:id',
@@ -224,24 +188,11 @@ router.delete(
 
 // ==================== ANIMAL GROUPS (FLOCKS) ====================
 
-router.get(
-  '/groups',
-  animalValidators.groupFilters,
-  validate,
-  animalController.getGroups.bind(animalController)
-);
+router.get('/groups', animalValidators.groupFilters, validate, animalController.getGroups.bind(animalController));
 
-router.get(
-  '/groups/statistics',
-  animalController.getGroupStatistics.bind(animalController)
-);
+router.get('/groups/statistics', animalController.getGroupStatistics.bind(animalController));
 
-router.get(
-  '/groups/:id',
-  animalValidators.idParam,
-  validate,
-  animalController.getGroupById.bind(animalController)
-);
+router.get('/groups/:id', animalValidators.idParam, validate, animalController.getGroupById.bind(animalController));
 
 router.get(
   '/groups/:id/adjustments',
@@ -264,19 +215,9 @@ router.get(
   animalController.getGroupCareSchedule.bind(animalController)
 );
 
-router.post(
-  '/groups',
-  animalValidators.createGroup,
-  validate,
-  animalController.createGroup.bind(animalController)
-);
+router.post('/groups', animalValidators.createGroup, validate, animalController.createGroup.bind(animalController));
 
-router.put(
-  '/groups/:id',
-  animalValidators.updateGroup,
-  validate,
-  animalController.updateGroup.bind(animalController)
-);
+router.put('/groups/:id', animalValidators.updateGroup, validate, animalController.updateGroup.bind(animalController));
 
 router.post(
   '/groups/:id/addition',
@@ -323,41 +264,17 @@ router.delete(
 
 // ==================== DEATHS ====================
 
-router.get(
-  '/deaths',
-  animalValidators.deathFilters,
-  validate,
-  animalController.getDeaths.bind(animalController)
-);
+router.get('/deaths', animalValidators.deathFilters, validate, animalController.getDeaths.bind(animalController));
 
-router.get(
-  '/deaths/statistics',
-  animalController.getDeathStatistics.bind(animalController)
-);
+router.get('/deaths/statistics', animalController.getDeathStatistics.bind(animalController));
 
-router.get(
-  '/deaths/by-cause',
-  animalController.getDeathsByCause.bind(animalController)
-);
+router.get('/deaths/by-cause', animalController.getDeathsByCause.bind(animalController));
 
-router.get(
-  '/deaths/alerts',
-  animalController.getRecentDeathAlerts.bind(animalController)
-);
+router.get('/deaths/alerts', animalController.getRecentDeathAlerts.bind(animalController));
 
-router.get(
-  '/deaths/:id',
-  animalValidators.idParam,
-  validate,
-  animalController.getDeathById.bind(animalController)
-);
+router.get('/deaths/:id', animalValidators.idParam, validate, animalController.getDeathById.bind(animalController));
 
-router.put(
-  '/deaths/:id',
-  animalValidators.updateDeath,
-  validate,
-  animalController.updateDeath.bind(animalController)
-);
+router.put('/deaths/:id', animalValidators.updateDeath, validate, animalController.updateDeath.bind(animalController));
 
 router.delete(
   '/deaths/:id',
@@ -369,10 +286,7 @@ router.delete(
 
 // ==================== CARE PLANS ====================
 
-router.get(
-  '/care-plans',
-  animalController.getCarePlans.bind(animalController)
-);
+router.get('/care-plans', animalController.getCarePlans.bind(animalController));
 
 router.get(
   '/care-plans/:id',
@@ -448,15 +362,9 @@ router.delete(
 
 // ==================== CARE SCHEDULES ====================
 
-router.get(
-  '/care-schedules',
-  animalController.getAllCareSchedules.bind(animalController)
-);
+router.get('/care-schedules', animalController.getAllCareSchedules.bind(animalController));
 
-router.get(
-  '/care-schedules/alerts',
-  animalController.getCareAlertsSummary.bind(animalController)
-);
+router.get('/care-schedules/alerts', animalController.getCareAlertsSummary.bind(animalController));
 
 router.delete(
   '/care-schedules/:scheduleId',
@@ -468,15 +376,9 @@ router.delete(
 
 // ==================== SCHEDULED TASKS ====================
 
-router.get(
-  '/scheduled-tasks',
-  animalController.getScheduledTasks.bind(animalController)
-);
+router.get('/scheduled-tasks', animalController.getScheduledTasks.bind(animalController));
 
-router.get(
-  '/scheduled-tasks/calendar',
-  animalController.getScheduledTasksCalendar.bind(animalController)
-);
+router.get('/scheduled-tasks/calendar', animalController.getScheduledTasksCalendar.bind(animalController));
 
 router.post(
   '/scheduled-tasks/update-statuses',
@@ -510,10 +412,7 @@ router.patch(
 const animalProductionController = require('../controllers/animal-production.controller');
 
 // Production types
-router.get(
-  '/production/types',
-  animalProductionController.getAllProductionTypes.bind(animalProductionController)
-);
+router.get('/production/types', animalProductionController.getAllProductionTypes.bind(animalProductionController));
 
 router.get(
   '/production/types/:id',
@@ -545,10 +444,7 @@ router.delete(
 );
 
 // Production records
-router.get(
-  '/production/records',
-  animalProductionController.getAllProductionRecords.bind(animalProductionController)
-);
+router.get('/production/records', animalProductionController.getAllProductionRecords.bind(animalProductionController));
 
 router.get(
   '/production/records/:id',
@@ -557,10 +453,7 @@ router.get(
   animalProductionController.getProductionRecordById.bind(animalProductionController)
 );
 
-router.post(
-  '/production/records',
-  animalProductionController.createProductionRecord.bind(animalProductionController)
-);
+router.post('/production/records', animalProductionController.createProductionRecord.bind(animalProductionController));
 
 router.put(
   '/production/records/:id',
@@ -588,32 +481,17 @@ router.get(
   animalProductionController.getDailyProductionSummary.bind(animalProductionController)
 );
 
-router.get(
-  '/production/by-source',
-  animalProductionController.getProductionBySource.bind(animalProductionController)
-);
+router.get('/production/by-source', animalProductionController.getProductionBySource.bind(animalProductionController));
 
 // ==================== HEALTH RECORDS ====================
 
-router.get(
-  '/health-records',
-  animalController.getAllHealthRecords.bind(animalController)
-);
+router.get('/health-records', animalController.getAllHealthRecords.bind(animalController));
 
-router.get(
-  '/health-records/statistics',
-  animalController.getHealthStatistics.bind(animalController)
-);
+router.get('/health-records/statistics', animalController.getHealthStatistics.bind(animalController));
 
-router.get(
-  '/health-records/upcoming-followups',
-  animalController.getUpcomingFollowups.bind(animalController)
-);
+router.get('/health-records/upcoming-followups', animalController.getUpcomingFollowups.bind(animalController));
 
-router.get(
-  '/health-records/overdue-followups',
-  animalController.getOverdueFollowups.bind(animalController)
-);
+router.get('/health-records/overdue-followups', animalController.getOverdueFollowups.bind(animalController));
 
 router.get(
   '/health-records/:id',
@@ -662,35 +540,20 @@ router.get(
 
 // ==================== DISEASE & TREATMENT ====================
 
-router.get(
-  '/diseases-treatments',
-  animalController.getAllDiseaseTreatments.bind(animalController)
-);
+router.get('/diseases-treatments', animalController.getAllDiseaseTreatments.bind(animalController));
 
-router.get(
-  '/diseases-treatments/statistics',
-  animalController.getDiseaseStatistics.bind(animalController)
-);
+router.get('/diseases-treatments/statistics', animalController.getDiseaseStatistics.bind(animalController));
 
 router.get(
   '/diseases-treatments/occurrence-summary',
   animalController.getDiseaseOccurrenceSummary.bind(animalController)
 );
 
-router.get(
-  '/diseases-treatments/ongoing',
-  animalController.getOngoingTreatments.bind(animalController)
-);
+router.get('/diseases-treatments/ongoing', animalController.getOngoingTreatments.bind(animalController));
 
-router.get(
-  '/diseases-treatments/chronic',
-  animalController.getChronicConditions.bind(animalController)
-);
+router.get('/diseases-treatments/chronic', animalController.getChronicConditions.bind(animalController));
 
-router.get(
-  '/diseases-treatments/critical',
-  animalController.getCriticalCases.bind(animalController)
-);
+router.get('/diseases-treatments/critical', animalController.getCriticalCases.bind(animalController));
 
 router.get(
   '/diseases-treatments/:id',
@@ -739,35 +602,17 @@ router.get(
 
 // ==================== FEED RECORDS ====================
 
-router.get(
-  '/feed-records',
-  animalController.getAllFeedRecords.bind(animalController)
-);
+router.get('/feed-records', animalController.getAllFeedRecords.bind(animalController));
 
-router.get(
-  '/feed-records/statistics',
-  animalController.getFeedStatistics.bind(animalController)
-);
+router.get('/feed-records/statistics', animalController.getFeedStatistics.bind(animalController));
 
-router.get(
-  '/feed-records/by-feed-type',
-  animalController.getConsumptionByFeedType.bind(animalController)
-);
+router.get('/feed-records/by-feed-type', animalController.getConsumptionByFeedType.bind(animalController));
 
-router.get(
-  '/feed-records/daily-consumption',
-  animalController.getDailyFeedConsumption.bind(animalController)
-);
+router.get('/feed-records/daily-consumption', animalController.getDailyFeedConsumption.bind(animalController));
 
-router.get(
-  '/feed-records/cost-by-type',
-  animalController.getFeedCostByAnimalType.bind(animalController)
-);
+router.get('/feed-records/cost-by-type', animalController.getFeedCostByAnimalType.bind(animalController));
 
-router.get(
-  '/feed-records/average-daily-cost',
-  animalController.getAverageDailyFeedCost.bind(animalController)
-);
+router.get('/feed-records/average-daily-cost', animalController.getAverageDailyFeedCost.bind(animalController));
 
 router.get(
   '/feed-records/:id',
@@ -816,25 +661,13 @@ router.get(
 
 // ==================== BREEDING RECORDS ====================
 
-router.get(
-  '/breeding-records',
-  animalController.getAllBreedingRecords.bind(animalController)
-);
+router.get('/breeding-records', animalController.getAllBreedingRecords.bind(animalController));
 
-router.get(
-  '/breeding-records/statistics',
-  animalController.getBreedingStatistics.bind(animalController)
-);
+router.get('/breeding-records/statistics', animalController.getBreedingStatistics.bind(animalController));
 
-router.get(
-  '/breeding-records/expected-deliveries',
-  animalController.getExpectedDeliveries.bind(animalController)
-);
+router.get('/breeding-records/expected-deliveries', animalController.getExpectedDeliveries.bind(animalController));
 
-router.get(
-  '/breeding-records/overdue-deliveries',
-  animalController.getOverdueDeliveries.bind(animalController)
-);
+router.get('/breeding-records/overdue-deliveries', animalController.getOverdueDeliveries.bind(animalController));
 
 router.get(
   '/breeding-records/success-rate-by-type',
@@ -888,47 +721,21 @@ router.get(
 
 // ==================== LIVESTOCK SALES ====================
 
-router.get(
-  '/sales',
-  animalController.getAllAnimalSales.bind(animalController)
-);
+router.get('/sales', animalController.getAllAnimalSales.bind(animalController));
 
-router.get(
-  '/sales/statistics',
-  animalController.getAnimalSalesStatistics.bind(animalController)
-);
+router.get('/sales/statistics', animalController.getAnimalSalesStatistics.bind(animalController));
 
-router.get(
-  '/sales/by-animal-type',
-  animalController.getSalesByAnimalType.bind(animalController)
-);
+router.get('/sales/by-animal-type', animalController.getSalesByAnimalType.bind(animalController));
 
-router.get(
-  '/sales/monthly',
-  animalController.getMonthlySales.bind(animalController)
-);
+router.get('/sales/monthly', animalController.getMonthlySales.bind(animalController));
 
-router.get(
-  '/sales/top-customers',
-  animalController.getTopCustomers.bind(animalController)
-);
+router.get('/sales/top-customers', animalController.getTopCustomers.bind(animalController));
 
-router.get(
-  '/sales/recent',
-  animalController.getRecentAnimalSales.bind(animalController)
-);
+router.get('/sales/recent', animalController.getRecentAnimalSales.bind(animalController));
 
-router.get(
-  '/sales/pending-payments',
-  animalController.getPendingPayments.bind(animalController)
-);
+router.get('/sales/pending-payments', animalController.getPendingPayments.bind(animalController));
 
-router.get(
-  '/sales/:id',
-  animalValidators.idParam,
-  validate,
-  animalController.getAnimalSaleById.bind(animalController)
-);
+router.get('/sales/:id', animalValidators.idParam, validate, animalController.getAnimalSaleById.bind(animalController));
 
 router.post(
   '/sales',
@@ -956,40 +763,19 @@ router.delete(
 
 // ==================== INCUBATION RECORDS ====================
 
-router.get(
-  '/incubation-records',
-  animalController.getAllIncubationRecords.bind(animalController)
-);
+router.get('/incubation-records', animalController.getAllIncubationRecords.bind(animalController));
 
-router.get(
-  '/incubation-records/statistics',
-  animalController.getIncubationStatistics.bind(animalController)
-);
+router.get('/incubation-records/statistics', animalController.getIncubationStatistics.bind(animalController));
 
-router.get(
-  '/incubation-records/active',
-  animalController.getActiveIncubations.bind(animalController)
-);
+router.get('/incubation-records/active', animalController.getActiveIncubations.bind(animalController));
 
-router.get(
-  '/incubation-records/due-to-hatch',
-  animalController.getDueToHatch.bind(animalController)
-);
+router.get('/incubation-records/due-to-hatch', animalController.getDueToHatch.bind(animalController));
 
-router.get(
-  '/incubation-records/overdue',
-  animalController.getOverdueHatching.bind(animalController)
-);
+router.get('/incubation-records/overdue', animalController.getOverdueHatching.bind(animalController));
 
-router.get(
-  '/incubation-records/hatch-rate-by-breed',
-  animalController.getHatchRateByBreed.bind(animalController)
-);
+router.get('/incubation-records/hatch-rate-by-breed', animalController.getHatchRateByBreed.bind(animalController));
 
-router.get(
-  '/incubation-records/monthly-summary',
-  animalController.getMonthlyIncubationSummary.bind(animalController)
-);
+router.get('/incubation-records/monthly-summary', animalController.getMonthlyIncubationSummary.bind(animalController));
 
 router.get(
   '/incubation-records/:id',

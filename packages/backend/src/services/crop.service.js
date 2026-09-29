@@ -905,7 +905,8 @@ class CropService {
     // Generate scheduled tasks
     const plantingDate = new Date(batch.planting_date);
     const harvestDate = batch.expected_harvest_date ? new Date(batch.expected_harvest_date) : null;
-    const totalDays = plan.total_duration_days || (harvestDate ? Math.ceil((harvestDate - plantingDate) / (1000 * 60 * 60 * 24)) : 90);
+    const totalDays =
+      plan.total_duration_days || (harvestDate ? Math.ceil((harvestDate - plantingDate) / (1000 * 60 * 60 * 24)) : 90);
 
     for (const planTask of plan.tasks) {
       await this._generateScheduledTasks(schedule.id, batchId, planTask, plantingDate, totalDays);
@@ -959,12 +960,9 @@ class CropService {
 
     // Handle recurring tasks
     if (planTask.is_recurring && planTask.recurrence_interval_days) {
-      const startDay = planTask.recurrence_start_days !== null
-        ? planTask.recurrence_start_days
-        : planTask.days_from_planting;
-      const endDay = planTask.recurrence_end_days !== null
-        ? planTask.recurrence_end_days
-        : totalDays;
+      const startDay =
+        planTask.recurrence_start_days !== null ? planTask.recurrence_start_days : planTask.days_from_planting;
+      const endDay = planTask.recurrence_end_days !== null ? planTask.recurrence_end_days : totalDays;
 
       let currentDay = startDay + planTask.recurrence_interval_days;
       let sequence = 2;
@@ -1118,16 +1116,20 @@ class CropService {
     }
 
     // Record the input application
-    const application = await this.recordInputApplication(task.batch_id, {
-      application_date: inputData.application_date || new Date(),
-      input_type: inputData.input_type || task.input_type,
-      product_name: inputData.product_name || task.input_product_name,
-      quantity: inputData.quantity || task.input_quantity,
-      unit: inputData.unit || task.input_unit,
-      application_method: inputData.application_method || task.input_application_method,
-      target_pest_disease: inputData.target_pest_disease,
-      notes: inputData.notes,
-    }, userId);
+    const application = await this.recordInputApplication(
+      task.batch_id,
+      {
+        application_date: inputData.application_date || new Date(),
+        input_type: inputData.input_type || task.input_type,
+        product_name: inputData.product_name || task.input_product_name,
+        quantity: inputData.quantity || task.input_quantity,
+        unit: inputData.unit || task.input_unit,
+        application_method: inputData.application_method || task.input_application_method,
+        target_pest_disease: inputData.target_pest_disease,
+        notes: inputData.notes,
+      },
+      userId
+    );
 
     // Link and complete the scheduled task
     await scheduledBatchTaskRepository.linkToInputApplication(taskId, application.id);

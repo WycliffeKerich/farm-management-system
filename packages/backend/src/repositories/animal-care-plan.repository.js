@@ -154,10 +154,7 @@ class AnimalCarePlanRepository extends BaseRepository {
       ORDER BY acpt.days_from_start, acpt.task_sequence
     `;
 
-    const [plan, tasks] = await Promise.all([
-      this.db.oneOrNone(planQuery, [id]),
-      this.db.any(tasksQuery, [id])
-    ]);
+    const [plan, tasks] = await Promise.all([this.db.oneOrNone(planQuery, [id]), this.db.any(tasksQuery, [id])]);
 
     if (plan) {
       plan.tasks = tasks;
@@ -192,12 +189,13 @@ class AnimalCarePlanRepository extends BaseRepository {
       total_duration_days: original.total_duration_days,
       applies_to: original.applies_to,
       status: 'draft',
-      created_by: userId
+      created_by: userId,
     });
 
     // Clone tasks
     for (const task of original.tasks) {
-      await this.db.none(`
+      await this.db.none(
+        `
         INSERT INTO animal_care_plan_tasks (
           plan_id, task_sequence, task_name, description, task_category_id, task_type,
           days_from_start, tolerance_days_before, tolerance_days_after,
@@ -209,15 +207,36 @@ class AnimalCarePlanRepository extends BaseRepository {
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26
         )
-      `, [
-        newPlan.id, task.task_sequence, task.task_name, task.description, task.task_category_id, task.task_type,
-        task.days_from_start, task.tolerance_days_before, task.tolerance_days_after,
-        task.age_based, task.target_age_days,
-        task.is_recurring, task.recurrence_interval_days, task.recurrence_end_days, task.recurrence_start_days,
-        task.priority, task.estimated_hours, task.input_type, task.input_product_name,
-        task.input_quantity, task.input_unit, task.input_dosage_per_animal, task.input_application_method,
-        task.requires_vet, task.vet_instructions, task.notes
-      ]);
+      `,
+        [
+          newPlan.id,
+          task.task_sequence,
+          task.task_name,
+          task.description,
+          task.task_category_id,
+          task.task_type,
+          task.days_from_start,
+          task.tolerance_days_before,
+          task.tolerance_days_after,
+          task.age_based,
+          task.target_age_days,
+          task.is_recurring,
+          task.recurrence_interval_days,
+          task.recurrence_end_days,
+          task.recurrence_start_days,
+          task.priority,
+          task.estimated_hours,
+          task.input_type,
+          task.input_product_name,
+          task.input_quantity,
+          task.input_unit,
+          task.input_dosage_per_animal,
+          task.input_application_method,
+          task.requires_vet,
+          task.vet_instructions,
+          task.notes,
+        ]
+      );
     }
 
     return await this.findWithTasks(newPlan.id);

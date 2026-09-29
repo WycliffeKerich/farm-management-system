@@ -65,9 +65,7 @@ class CropBatchRepository extends BaseRepository {
 
     if (filters.status) {
       // Handle single status or comma-separated statuses
-      const statuses = Array.isArray(filters.status)
-        ? filters.status
-        : filters.status.split(',').map(s => s.trim());
+      const statuses = Array.isArray(filters.status) ? filters.status : filters.status.split(',').map((s) => s.trim());
 
       if (statuses.length === 1) {
         conditions.push(`cb.status = $${paramIndex++}`);
@@ -235,9 +233,7 @@ class CropBatchRepository extends BaseRepository {
 
     if (filters.status) {
       // Handle single status or comma-separated statuses
-      const statuses = Array.isArray(filters.status)
-        ? filters.status
-        : filters.status.split(',').map(s => s.trim());
+      const statuses = Array.isArray(filters.status) ? filters.status : filters.status.split(',').map((s) => s.trim());
 
       if (statuses.length === 1) {
         conditions.push(`cb.status = $${paramIndex++}`);

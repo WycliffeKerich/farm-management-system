@@ -37,7 +37,7 @@ class AnimalProductionRepository {
 
   async createProductionType(data) {
     const columns = ['name', 'category', 'unit', 'description', 'is_active'];
-    const values = columns.map(col => data[col]);
+    const values = columns.map((col) => data[col]);
     const placeholders = columns.map((_, i) => `$${i + 1}`);
 
     return db.one(
@@ -53,7 +53,7 @@ class AnimalProductionRepository {
     const updates = [];
     const values = [];
 
-    allowedFields.forEach(field => {
+    allowedFields.forEach((field) => {
       if (data[field] !== undefined) {
         values.push(data[field]);
         updates.push(`${field} = $${values.length}`);
@@ -187,13 +187,14 @@ class AnimalProductionRepository {
         page,
         limit,
         total: parseInt(total),
-        totalPages: Math.ceil(total / limit)
-      }
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 
   async findProductionRecordById(id) {
-    return db.oneOrNone(`
+    return db.oneOrNone(
+      `
       SELECT
         pr.*,
         pt.name as production_type_name,
@@ -210,13 +211,22 @@ class AnimalProductionRepository {
       LEFT JOIN animal_groups ag ON pr.animal_group_id = ag.id
       LEFT JOIN users u ON pr.recorded_by = u.id
       WHERE pr.id = $1
-    `, [id]);
+    `,
+      [id]
+    );
   }
 
   async createProductionRecord(data) {
     const columns = [
-      'production_type_id', 'animal_id', 'animal_group_id', 'production_date',
-      'quantity', 'quality_grade', 'unit_price', 'notes', 'recorded_by'
+      'production_type_id',
+      'animal_id',
+      'animal_group_id',
+      'production_date',
+      'quantity',
+      'quality_grade',
+      'unit_price',
+      'notes',
+      'recorded_by',
     ];
     const values = [];
     const placeholders = [];
@@ -235,7 +245,7 @@ class AnimalProductionRepository {
     const insertPlaceholders = [];
     const insertValues = [];
 
-    columns.forEach(col => {
+    columns.forEach((col) => {
       if (data[col] !== undefined && data[col] !== null) {
         insertColumns.push(col);
         insertValues.push(data[col]);
@@ -252,14 +262,11 @@ class AnimalProductionRepository {
   }
 
   async updateProductionRecord(id, data) {
-    const allowedFields = [
-      'production_type_id', 'production_date', 'quantity',
-      'quality_grade', 'unit_price', 'notes'
-    ];
+    const allowedFields = ['production_type_id', 'production_date', 'quantity', 'quality_grade', 'unit_price', 'notes'];
     const updates = [];
     const values = [];
 
-    allowedFields.forEach(field => {
+    allowedFields.forEach((field) => {
       if (data[field] !== undefined) {
         values.push(data[field]);
         updates.push(`${field} = $${values.length}`);

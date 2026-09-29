@@ -348,7 +348,7 @@ class AnimalService {
     }
 
     // Generate tag number
-    const tagNumber = data.tag_number || await animalRepository.generateTagNumber(breed.animal_type_name);
+    const tagNumber = data.tag_number || (await animalRepository.generateTagNumber(breed.animal_type_name));
 
     // Check for duplicate tag
     const existingTag = await animalRepository.findByTagNumber(tagNumber);
@@ -360,7 +360,7 @@ class AnimalService {
       ...data,
       tag_number: tagNumber,
       status: data.status || 'active',
-      created_by: userId
+      created_by: userId,
     };
 
     return await animalRepository.create(animalData);
@@ -534,7 +534,7 @@ class AnimalService {
     }
 
     // Generate group code
-    const groupCode = data.group_code || await animalGroupRepository.generateGroupCode(breed.animal_type_name);
+    const groupCode = data.group_code || (await animalGroupRepository.generateGroupCode(breed.animal_type_name));
 
     // Check for duplicate code
     if (groupCode) {
@@ -550,7 +550,7 @@ class AnimalService {
       initial_quantity: data.quantity,
       current_quantity: data.quantity,
       status: data.status || 'active',
-      created_by: userId
+      created_by: userId,
     };
 
     return await animalGroupRepository.create(groupData);
@@ -591,19 +591,14 @@ class AnimalService {
       throw new NotFoundError('Animal group not found');
     }
 
-    return await animalGroupRepository.recordAddition(
-      groupId,
-      data.quantity,
-      data.type || 'addition',
-      {
-        adjustment_date: data.adjustment_date || new Date(),
-        reason: data.reason,
-        unit_value: data.unit_value,
-        total_value: data.total_value,
-        notes: data.notes,
-        recorded_by: userId
-      }
-    );
+    return await animalGroupRepository.recordAddition(groupId, data.quantity, data.type || 'addition', {
+      adjustment_date: data.adjustment_date || new Date(),
+      reason: data.reason,
+      unit_value: data.unit_value,
+      total_value: data.total_value,
+      notes: data.notes,
+      recorded_by: userId,
+    });
   }
 
   /**
@@ -624,19 +619,14 @@ class AnimalService {
       throw new ValidationError('Cannot remove more animals than currently in group');
     }
 
-    return await animalGroupRepository.recordRemoval(
-      groupId,
-      data.quantity,
-      data.type || 'removal',
-      {
-        adjustment_date: data.adjustment_date || new Date(),
-        reason: data.reason,
-        unit_value: data.unit_value,
-        total_value: data.total_value,
-        notes: data.notes,
-        recorded_by: userId
-      }
-    );
+    return await animalGroupRepository.recordRemoval(groupId, data.quantity, data.type || 'removal', {
+      adjustment_date: data.adjustment_date || new Date(),
+      reason: data.reason,
+      unit_value: data.unit_value,
+      total_value: data.total_value,
+      notes: data.notes,
+      recorded_by: userId,
+    });
   }
 
   /**
@@ -705,7 +695,7 @@ class AnimalService {
       ...data,
       animal_id: animalId,
       quantity: 1,
-      reported_by: userId
+      reported_by: userId,
     };
 
     // The trigger will update the animal status automatically
@@ -733,7 +723,7 @@ class AnimalService {
     const deathData = {
       ...data,
       animal_group_id: groupId,
-      reported_by: userId
+      reported_by: userId,
     };
 
     // The trigger will update the group quantity automatically
@@ -928,7 +918,7 @@ class AnimalService {
     const planData = {
       ...data,
       plan_code: planCode,
-      created_by: userId
+      created_by: userId,
     };
 
     return await animalCarePlanRepository.create(planData);
@@ -1001,7 +991,7 @@ class AnimalService {
     const taskData = {
       ...data,
       plan_id: planId,
-      task_sequence: data.task_sequence || sequence
+      task_sequence: data.task_sequence || sequence,
     };
 
     return await animalCarePlanTaskRepository.create(taskData);
@@ -1069,7 +1059,7 @@ class AnimalService {
       plan_id: planId,
       start_date: startDate || animal.date_of_birth || animal.date_acquired,
       applied_by: userId,
-      status: 'active'
+      status: 'active',
     });
 
     // Generate scheduled tasks
@@ -1118,7 +1108,7 @@ class AnimalService {
       plan_id: planId,
       start_date: startDate || group.date_established || group.acquisition_date,
       applied_by: userId,
-      status: 'active'
+      status: 'active',
     });
 
     // Generate scheduled tasks
@@ -1127,7 +1117,15 @@ class AnimalService {
     const groupQuantity = group.current_quantity || group.quantity;
 
     for (const planTask of plan.tasks) {
-      await this._generateScheduledAnimalTasks(schedule.id, null, groupId, planTask, scheduleStartDate, totalDays, groupQuantity);
+      await this._generateScheduledAnimalTasks(
+        schedule.id,
+        null,
+        groupId,
+        planTask,
+        scheduleStartDate,
+        totalDays,
+        groupQuantity
+      );
     }
 
     // Update statuses based on current date
@@ -1140,7 +1138,15 @@ class AnimalService {
    * Generate scheduled tasks from a plan task
    * @private
    */
-  async _generateScheduledAnimalTasks(scheduleId, animalId, groupId, planTask, startDate, totalDays, groupQuantity = null) {
+  async _generateScheduledAnimalTasks(
+    scheduleId,
+    animalId,
+    groupId,
+    planTask,
+    startDate,
+    totalDays,
+    groupQuantity = null
+  ) {
     const createTask = async (dayOffset, recurringSeq = null) => {
       const plannedDate = new Date(startDate);
       plannedDate.setDate(plannedDate.getDate() + dayOffset);
@@ -1173,7 +1179,7 @@ class AnimalService {
         quantity_total: groupQuantity,
         is_recurring_instance: recurringSeq !== null,
         recurring_sequence: recurringSeq,
-        status: 'pending'
+        status: 'pending',
       });
     };
 
@@ -1182,12 +1188,9 @@ class AnimalService {
 
     // Handle recurring tasks
     if (planTask.is_recurring && planTask.recurrence_interval_days) {
-      const startDay = planTask.recurrence_start_days !== null
-        ? planTask.recurrence_start_days
-        : planTask.days_from_start;
-      const endDay = planTask.recurrence_end_days !== null
-        ? planTask.recurrence_end_days
-        : totalDays;
+      const startDay =
+        planTask.recurrence_start_days !== null ? planTask.recurrence_start_days : planTask.days_from_start;
+      const endDay = planTask.recurrence_end_days !== null ? planTask.recurrence_end_days : totalDays;
 
       let currentDay = startDay + planTask.recurrence_interval_days;
       let sequence = 2;
@@ -1213,13 +1216,13 @@ class AnimalService {
 
     const [tasks, progress] = await Promise.all([
       scheduledAnimalTaskRepository.findByScheduleId(schedule.id),
-      animalCareScheduleRepository.getProgress(schedule.id)
+      animalCareScheduleRepository.getProgress(schedule.id),
     ]);
 
     return {
       ...schedule,
       tasks,
-      progress
+      progress,
     };
   }
 
@@ -1236,13 +1239,13 @@ class AnimalService {
 
     const [tasks, progress] = await Promise.all([
       scheduledAnimalTaskRepository.findByScheduleId(schedule.id),
-      animalCareScheduleRepository.getProgress(schedule.id)
+      animalCareScheduleRepository.getProgress(schedule.id),
     ]);
 
     return {
       ...schedule,
       tasks,
-      progress
+      progress,
     };
   }
 
@@ -1387,7 +1390,7 @@ class AnimalService {
     const [upcoming, overdue, recentDeaths] = await Promise.all([
       scheduledAnimalTaskRepository.findUpcoming(daysAhead),
       scheduledAnimalTaskRepository.findOverdue(),
-      animalDeathRepository.getRecentDeaths(7, 5)
+      animalDeathRepository.getRecentDeaths(7, 5),
     ]);
 
     return {
@@ -1396,7 +1399,7 @@ class AnimalService {
       recent_deaths_count: recentDeaths.length,
       upcoming_tasks: upcoming.slice(0, 10),
       overdue_tasks: overdue.slice(0, 10),
-      recent_deaths: recentDeaths
+      recent_deaths: recentDeaths,
     };
   }
 
@@ -1932,19 +1935,14 @@ class AnimalService {
       }
 
       // Add offspring to the group
-      await animalGroupRepository.recordAddition(
-        data.target_group_id,
-        data.offspring_count,
-        'born',
-        {
-          adjustment_date: data.actual_delivery_date || new Date(),
-          reason: 'Birth/Hatching from breeding record',
-          reference_type: 'breeding_record',
-          reference_id: id,
-          notes: data.notes || `Added ${data.offspring_count} offspring from breeding`,
-          recorded_by: data.recorded_by
-        }
-      );
+      await animalGroupRepository.recordAddition(data.target_group_id, data.offspring_count, 'born', {
+        adjustment_date: data.actual_delivery_date || new Date(),
+        reason: 'Birth/Hatching from breeding record',
+        reference_type: 'breeding_record',
+        reference_id: id,
+        notes: data.notes || `Added ${data.offspring_count} offspring from breeding`,
+        recorded_by: data.recorded_by,
+      });
     }
 
     // Remove target_group_id from data as it's not a breeding_records column
@@ -2081,7 +2079,7 @@ class AnimalService {
         adjustment_type: 'sale',
         reason: `Sold to ${data.customer_name || 'customer'}`,
         notes: data.notes,
-        recorded_by: data.recorded_by
+        recorded_by: data.recorded_by,
       });
     }
 
@@ -2284,19 +2282,14 @@ class AnimalService {
       }
 
       // Add hatched chicks to the target group
-      await animalGroupRepository.recordAddition(
-        data.target_group_id,
-        data.hatched_count,
-        'hatched',
-        {
-          adjustment_date: data.actual_hatch_date,
-          reason: 'Hatched from incubation',
-          reference_type: 'incubation_record',
-          reference_id: id,
-          notes: data.notes || `Added ${data.hatched_count} hatched chicks from batch ${record.batch_code}`,
-          recorded_by: data.recorded_by
-        }
-      );
+      await animalGroupRepository.recordAddition(data.target_group_id, data.hatched_count, 'hatched', {
+        adjustment_date: data.actual_hatch_date,
+        reason: 'Hatched from incubation',
+        reference_type: 'incubation_record',
+        reference_id: id,
+        notes: data.notes || `Added ${data.hatched_count} hatched chicks from batch ${record.batch_code}`,
+        recorded_by: data.recorded_by,
+      });
 
       // Auto-update status based on hatch results
       if (data.hatched_count === record.eggs_count) {

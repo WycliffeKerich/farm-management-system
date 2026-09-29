@@ -186,11 +186,7 @@ class CropController {
       const { page, limit, ...filters } = req.query;
 
       if (page || limit) {
-        const result = await cropService.getPaginatedBatches(
-          parseInt(page) || 1,
-          parseInt(limit) || 20,
-          filters
-        );
+        const result = await cropService.getPaginatedBatches(parseInt(page) || 1, parseInt(limit) || 20, filters);
         res.json({ success: true, ...result });
       } else {
         const batches = await cropService.getAllBatches(filters);
@@ -260,11 +256,7 @@ class CropController {
 
   async addObservation(req, res, next) {
     try {
-      const observation = await cropService.addObservation(
-        req.params.batchId,
-        req.body,
-        req.user.id
-      );
+      const observation = await cropService.addObservation(req.params.batchId, req.body, req.user.id);
       res.status(201).json({ success: true, data: observation });
     } catch (error) {
       next(error);
@@ -293,11 +285,7 @@ class CropController {
 
   async recordHarvest(req, res, next) {
     try {
-      const harvest = await cropService.recordHarvest(
-        req.params.batchId,
-        req.body,
-        req.user.id
-      );
+      const harvest = await cropService.recordHarvest(req.params.batchId, req.body, req.user.id);
       res.status(201).json({ success: true, data: harvest });
     } catch (error) {
       next(error);
@@ -345,11 +333,7 @@ class CropController {
 
   async recordInputApplication(req, res, next) {
     try {
-      const application = await cropService.recordInputApplication(
-        req.params.batchId,
-        req.body,
-        req.user.id
-      );
+      const application = await cropService.recordInputApplication(req.params.batchId, req.body, req.user.id);
       res.status(201).json({ success: true, data: application });
     } catch (error) {
       next(error);
@@ -387,11 +371,7 @@ class CropController {
 
   async reportPestDisease(req, res, next) {
     try {
-      const record = await cropService.reportPestDisease(
-        req.params.batchId,
-        req.body,
-        req.user.id
-      );
+      const record = await cropService.reportPestDisease(req.params.batchId, req.body, req.user.id);
       res.status(201).json({ success: true, data: record });
     } catch (error) {
       next(error);
@@ -419,11 +399,7 @@ class CropController {
   async updatePestDiseaseStatus(req, res, next) {
     try {
       const { status, control_measures } = req.body;
-      const record = await cropService.updatePestDiseaseStatus(
-        req.params.id,
-        status,
-        control_measures
-      );
+      const record = await cropService.updatePestDiseaseStatus(req.params.id, status, control_measures);
       res.json({ success: true, data: record });
     } catch (error) {
       next(error);
@@ -568,11 +544,7 @@ class CropController {
   async applyCarePlanToBatch(req, res, next) {
     try {
       const { plan_id } = req.body;
-      const schedule = await cropService.applyCarePlanToBatch(
-        req.params.batchId,
-        plan_id,
-        req.user.id
-      );
+      const schedule = await cropService.applyCarePlanToBatch(req.params.batchId, plan_id, req.user.id);
       res.status(201).json({ success: true, data: schedule });
     } catch (error) {
       next(error);
@@ -647,11 +619,7 @@ class CropController {
   async completeScheduledTask(req, res, next) {
     try {
       const { notes } = req.body;
-      const task = await cropService.completeScheduledTask(
-        req.params.taskId,
-        req.user.id,
-        notes
-      );
+      const task = await cropService.completeScheduledTask(req.params.taskId, req.user.id, notes);
       res.json({ success: true, data: task });
     } catch (error) {
       next(error);
@@ -661,11 +629,7 @@ class CropController {
   async skipScheduledTask(req, res, next) {
     try {
       const { reason } = req.body;
-      const task = await cropService.skipScheduledTask(
-        req.params.taskId,
-        req.user.id,
-        reason
-      );
+      const task = await cropService.skipScheduledTask(req.params.taskId, req.user.id, reason);
       res.json({ success: true, data: task });
     } catch (error) {
       next(error);
@@ -674,11 +638,7 @@ class CropController {
 
   async completeScheduledTaskWithInput(req, res, next) {
     try {
-      const task = await cropService.completeScheduledTaskWithInput(
-        req.params.taskId,
-        req.body,
-        req.user.id
-      );
+      const task = await cropService.completeScheduledTaskWithInput(req.params.taskId, req.body, req.user.id);
       res.json({ success: true, data: task });
     } catch (error) {
       next(error);
