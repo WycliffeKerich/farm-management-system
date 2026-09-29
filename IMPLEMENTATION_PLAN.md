@@ -325,7 +325,7 @@ _Carried forward:_
 
 ---
 
-### Phase 3.5: Hardening & Test Harness (1.5 weeks) ◀ in progress (inventory items pending the Phase 4 rebase)
+### Phase 3.5: Hardening & Test Harness (1.5 weeks) ◀ code complete; awaiting push, PR and required CI check
 **Branch:** `feature/phase-3.5-hardening`
 
 **Goal:** make the existing code safe and correct, and put the test and CI safety net in place, before adding features.
@@ -383,14 +383,33 @@ Done on `feature/phase-3.5-hardening`:
   - CI: `.github/workflows/ci.yml` runs on Node 22 with `postgres:18`.
 - **Lint:** frontend lint is clean. The existing views were formatted once, so lint can gate CI.
 
+Done on `feature/phase-4-inventory` (rebased onto `feature/phase-3.5-hardening`, Prompt 3.5.5):
+- **A5 and the inventory halves of A4, A6 and A11 are done.**
+  - Stock changes run in one transaction with the item locked, in integer hundredths.
+  - Migration `014_inventory_integrity.sql` adds the CHECKs and the hard-delete guard, and fixes an "ambiguous item_code" bug in 011's `generate_batch_number()` trigger. Every batch create had been failing with a 500.
+  - FEFO usage is exposed as `POST /inventory/items/:id/use`.
+- **Local dev DB:** migrations 010/011 are recorded with `--mark-applied`, and 014 is applied.
+- **Reconcile check:** `npm run inventory:reconcile` exits 1 on drift.
+  - It found drift on the dev DB: item 1 `SED-0001` has `current_stock` 180 but its ledger sums to 380.
+  - The ledger has four identical 100-unit "Initial stock purchase" rows seconds apart, which look like repeated submits.
+  - The drift is left as is; deciding the fix is the owner's call.
+- **Frontend:**
+  - Every module now sends the calendar day the user picked (`toApiDate`). Before, dates picked in Nairobi were saved a day early.
+  - The inventory screens now use the API's real field names and transaction types. Before, recording a movement from the UI could not have worked.
+- **Tests:**
+  - Backend: 132 Jest tests (22 for inventory), 77% line coverage overall.
+  - Frontend: 46 Vitest tests.
+
 Open:
-- **A5 and the inventory halves of A4, A6 and A11:** these land when Phase 4 is rebased onto this branch (Prompt 3.5.5).
-  - Migrations 010/011 are already applied to the local dev database from the WIP. Record them with `npm run migrate -- --mark-applied=…` after the rebase.
+- **Push and open the PRs:** the Phase 3.5 PR into `develop` first, then Phase 4 (needs `--force-with-lease`, since it was rebased).
 - **CI as a required check:** make CI required on `develop` in the GitHub branch protection settings after the first green run.
 
 Follow-ups:
 - **`timestamptz` migration:** `TIMESTAMP` columns (`created_at`, `last_login`, `locked_until`, …) are serialised using Node's local timezone. Converting them to `timestamptz` removes the dependency on the server's timezone for displayed times. This is a small migration; schedule it early in Phase 4.
 - **Frontend tests for views:** the coverage gate covers only the session and routing core. Extend `coverage.include` as views and stores get tests (start with the user management and inventory transaction forms).
+- **FEFO for every outgoing movement:** only "usage" on the item screen draws from batches. Waste, expiry and usage recorded elsewhere reduce item stock but not batch quantities, so batch totals can exceed item stock (the reconcile check reports this). Route all outgoing movements for batch-tracked items through FEFO in Phase 4.
+- **Display-side dates outside inventory:** some crop and animal views still display DATE strings with `new Date('YYYY-MM-DD')`, which shows the previous day west of UTC. This doesn't affect Nairobi. Switch them to `fromApiDate` when those views are next touched.
+- **Unpaged items endpoint:** `GET /inventory/items` without `page` ignores `low_stock` and `expiring_days`. The item list filters on the client for now. Make the endpoint honour the filters, or page the list, in Phase 4.
 
 ---
 
