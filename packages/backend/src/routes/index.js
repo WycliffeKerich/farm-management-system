@@ -1,5 +1,6 @@
 const express = require('express');
 const authRoutes = require('./auth.routes');
+const userRoutes = require('./user.routes');
 const cropRoutes = require('./crop.routes');
 const animalRoutes = require('./animal.routes');
 const { db } = require('../config/database');
@@ -28,6 +29,9 @@ router.get('/health', async (req, res) => {
 
 // Authentication routes
 router.use('/auth', authRoutes);
+
+// User management (owner only)
+router.use('/users', userRoutes);
 
 // Crop management routes
 router.use('/crops', cropRoutes);

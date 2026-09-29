@@ -11,8 +11,8 @@ function validate(req, res, next) {
   const errors = validationResult(req);
 
   if (!errors.isEmpty()) {
-    const errorMessages = errors.array().map((err) => err.msg);
-    throw new ValidationError(errorMessages.join(', '));
+    const details = errors.array().map((err) => ({ field: err.path, message: err.msg }));
+    throw new ValidationError(details.map((d) => d.message).join(', '), details);
   }
 
   next();
