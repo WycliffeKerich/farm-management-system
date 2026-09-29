@@ -26,7 +26,7 @@ const menuItems = ref([
         icon: 'pi pi-sign-out',
         command: async () => {
             await authStore.logout();
-            router.push('/auth/login');
+            router.push({ name: 'login' });
         }
     }
 ]);
@@ -74,7 +74,7 @@ const toggleProfileMenu = (event) => {
 
             <div class="layout-topbar-menu hidden lg:block">
                 <div class="layout-topbar-menu-content">
-                    <router-link to="/tasks/calendar" class="layout-topbar-action">
+                    <router-link to="/animals/scheduled-tasks" class="layout-topbar-action">
                         <i class="pi pi-calendar"></i>
                         <span>Tasks</span>
                     </router-link>
