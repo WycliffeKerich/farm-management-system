@@ -1,4 +1,5 @@
 const { db } = require('../config/database');
+const { toPagination } = require('../utils/sql');
 
 class AnimalProductionRepository {
   // ==================== PRODUCTION TYPES ====================
@@ -131,12 +132,11 @@ class AnimalProductionRepository {
     }
 
     // Pagination
-    const page = parseInt(filters.page) || 1;
-    const limit = parseInt(filters.limit) || 50;
-    const offset = (page - 1) * limit;
+    const { page, limit, offset } = toPagination(filters.page, filters.limit || 50);
 
     query += ' ORDER BY pr.production_date DESC, pr.created_at DESC';
-    query += ` LIMIT ${limit} OFFSET ${offset}`;
+    params.push(limit, offset);
+    query += ` LIMIT $${params.length - 1} OFFSET $${params.length}`;
 
     const records = await db.any(query, params);
 

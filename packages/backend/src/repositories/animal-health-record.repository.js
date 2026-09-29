@@ -1,4 +1,5 @@
 const BaseRepository = require('./base.repository');
+const { toSqlInt } = require('../utils/sql');
 
 /**
  * Repository for animal_health_records table operations
@@ -227,7 +228,7 @@ class AnimalHealthRecordRepository extends BaseRepository {
       WHERE ahr.deleted_at IS NULL
         AND ahr.next_followup_date IS NOT NULL
         AND ahr.next_followup_date >= CURRENT_DATE
-        AND ahr.next_followup_date <= CURRENT_DATE + INTERVAL '${days} days'
+        AND ahr.next_followup_date <= CURRENT_DATE + make_interval(days => ${toSqlInt(days, { name: 'days' })})
       ORDER BY ahr.next_followup_date ASC
       LIMIT $1
     `;
@@ -281,7 +282,7 @@ class AnimalHealthRecordRepository extends BaseRepository {
       LEFT JOIN animal_breeds ab ON COALESCE(a.animal_breed_id, ag.animal_breed_id) = ab.id
       LEFT JOIN animal_types at ON ab.animal_type_id = at.id
       WHERE ahr.deleted_at IS NULL
-        AND ahr.record_date >= CURRENT_DATE - INTERVAL '${days} days'
+        AND ahr.record_date >= CURRENT_DATE - make_interval(days => ${toSqlInt(days, { name: 'days' })})
       ORDER BY ahr.record_date DESC, ahr.created_at DESC
       LIMIT $1
     `;

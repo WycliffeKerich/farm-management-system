@@ -1,4 +1,5 @@
 const BaseRepository = require('./base.repository');
+const { toSqlInt } = require('../utils/sql');
 
 /**
  * Repository for incubation_records table operations
@@ -173,7 +174,7 @@ class IncubationRecordRepository extends BaseRepository {
       LEFT JOIN animal_groups ag ON ir.animal_group_id = ag.id
       LEFT JOIN animal_breeds ab ON ir.animal_breed_id = ab.id
       WHERE ir.status = 'incubating'
-        AND ir.expected_hatch_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '${days} days'
+        AND ir.expected_hatch_date BETWEEN CURRENT_DATE AND CURRENT_DATE + make_interval(days => ${toSqlInt(days, { name: 'days' })})
         AND ir.deleted_at IS NULL
       ORDER BY ir.expected_hatch_date ASC
     `;
@@ -308,7 +309,7 @@ class IncubationRecordRepository extends BaseRepository {
         END as hatch_rate
       FROM ${this.tableName}
       WHERE deleted_at IS NULL
-        AND incubation_start_date >= CURRENT_DATE - INTERVAL '${months} months'
+        AND incubation_start_date >= CURRENT_DATE - make_interval(months => ${toSqlInt(months, { max: 120, name: 'months' })})
       GROUP BY month
       ORDER BY month DESC
     `;

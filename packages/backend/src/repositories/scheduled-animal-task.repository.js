@@ -1,4 +1,5 @@
 const BaseRepository = require('./base.repository');
+const { toSqlInt } = require('../utils/sql');
 
 /**
  * Repository for scheduled_animal_tasks table operations
@@ -88,7 +89,7 @@ class ScheduledAnimalTaskRepository extends BaseRepository {
       LEFT JOIN animal_types at ON ab.animal_type_id = at.id
       WHERE sat.deleted_at IS NULL
         AND sat.status IN ('pending', 'upcoming', 'due')
-        AND sat.planned_date <= CURRENT_DATE + INTERVAL '${daysAhead} days'
+        AND sat.planned_date <= CURRENT_DATE + make_interval(days => ${toSqlInt(daysAhead, { name: 'daysAhead' })})
         AND acs.status = 'active'
     `;
 
