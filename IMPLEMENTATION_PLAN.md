@@ -404,7 +404,7 @@ Done on `feature/phase-4-inventory` (rebased onto `feature/phase-3.5-hardening`,
 Merged 2026-09-29: PR #1 (Phase 3.5) and PR #2 (Phase 4 part 1) into `develop`. `develop` is protected: a PR is required and the CI `test` check must pass on an up-to-date branch. No approving review is required, since there is a single maintainer.
 
 Follow-ups (carried into Phase 4):
-- **`timestamptz` migration:** `TIMESTAMP` columns (`created_at`, `last_login`, `locked_until`, …) are serialised using Node's local timezone. Converting them to `timestamptz` removes the dependency on the server's timezone for displayed times. This is a small migration; schedule it early in Phase 4.
+- ~~**`timestamptz` migration:** `TIMESTAMP` columns (`created_at`, `last_login`, `locked_until`, …) are serialised using Node's local timezone.~~ Done in Phase 4 (migration 016): every `TIMESTAMP` column is now `TIMESTAMPTZ`, with existing values read in the server's zone. A migrator test fails if a zone-less timestamp column appears again.
 - **Frontend tests for views:** the coverage gate covers only the session and routing core. Extend `coverage.include` as views and stores get tests (start with the user management and inventory transaction forms).
 - **FEFO for every outgoing movement:** only "usage" on the item screen draws from batches. Waste, expiry and usage recorded elsewhere reduce item stock but not batch quantities, so batch totals can exceed item stock (the reconcile check reports this). Route all outgoing movements for batch-tracked items through FEFO in Phase 4.
 - **Display-side dates outside inventory:** some crop and animal views still display DATE strings with `new Date('YYYY-MM-DD')`, which shows the previous day west of UTC. This doesn't affect Nairobi. Switch them to `fromApiDate` when those views are next touched.
@@ -448,7 +448,7 @@ Follow-ups (carried into Phase 4):
 - Integration: application → stock decremented → cost stored → PHI set → harvest blocked → owner override allowed.
 - Rollback: a failed stock deduction leaves no application row.
 - Unit conversion.
-- Done: `crop-inputs.test.js` (9), `animal-withdrawals.test.js` (12) and `inventory-reports.test.js` (7). Backend total 181 tests.
+- Done: `crop-inputs.test.js` (9), `animal-withdrawals.test.js` (12) and `inventory-reports.test.js` (7). Backend total 182 tests.
 
 **Deliverables:** every spray, feed and dose deducts stock and carries a cost; harvesting or selling produce under withdrawal is prevented.
 

@@ -27,6 +27,17 @@ describe('migrator', () => {
     expect(rows).toEqual(files);
   });
 
+  it('leaves no zone-less timestamp columns (new ones must be TIMESTAMPTZ)', async () => {
+    const columns = await db.map(
+      `SELECT table_name || '.' || column_name AS name
+         FROM information_schema.columns
+        WHERE table_schema = 'public' AND data_type = 'timestamp without time zone'`,
+      [],
+      (r) => r.name
+    );
+    expect(columns).toEqual([]);
+  });
+
   it('applies pending files once, in order, and is idempotent', async () => {
     fs.writeFileSync(path.join(dir, '001_a.sql'), 'CREATE TABLE a (id int);');
     fs.writeFileSync(path.join(dir, '002_b.sql'), 'CREATE TABLE b (id int);');
