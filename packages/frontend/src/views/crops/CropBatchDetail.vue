@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import cropService from '@/services/crop.service';
+import { toApiDate } from '@/utils/dates';
 
 const route = useRoute();
 const router = useRouter();
@@ -113,7 +114,7 @@ const openObservationDialog = () => {
 const saveObservation = async () => {
     saving.value = true;
     try {
-        const data = { ...observationForm.value, observation_date: formatDateForApi(observationForm.value.observation_date) };
+        const data = { ...observationForm.value, observation_date: toApiDate(observationForm.value.observation_date) };
         await cropService.addObservation(batch.value.id, data);
         observationDialog.value = false;
         loadBatch();
@@ -137,7 +138,7 @@ const saveHarvest = async () => {
     }
     saving.value = true;
     try {
-        const data = { ...harvestForm.value, harvest_date: formatDateForApi(harvestForm.value.harvest_date) };
+        const data = { ...harvestForm.value, harvest_date: toApiDate(harvestForm.value.harvest_date) };
         await cropService.recordHarvest(batch.value.id, data);
         harvestDialog.value = false;
         loadBatch();
@@ -161,7 +162,7 @@ const saveInputApplication = async () => {
     }
     saving.value = true;
     try {
-        const data = { ...inputForm.value, application_date: formatDateForApi(inputForm.value.application_date) };
+        const data = { ...inputForm.value, application_date: toApiDate(inputForm.value.application_date) };
         await cropService.recordInputApplication(batch.value.id, data);
         inputDialog.value = false;
         loadBatch();
@@ -185,7 +186,7 @@ const savePestDisease = async () => {
     }
     saving.value = true;
     try {
-        const data = { ...pestForm.value, incident_date: formatDateForApi(pestForm.value.incident_date) };
+        const data = { ...pestForm.value, incident_date: toApiDate(pestForm.value.incident_date) };
         await cropService.reportPestDisease(batch.value.id, data);
         pestDiseaseDialog.value = false;
         loadBatch();
@@ -218,7 +219,6 @@ const savePestStatus = async () => {
 
 // Utility functions
 const formatDate = (date) => (date ? new Date(date).toLocaleDateString() : '');
-const formatDateForApi = (date) => (date ? new Date(date).toISOString().split('T')[0] : null);
 const formatStatus = (status) => status.charAt(0).toUpperCase() + status.slice(1);
 const formatInputType = (type) => type.charAt(0).toUpperCase() + type.slice(1);
 

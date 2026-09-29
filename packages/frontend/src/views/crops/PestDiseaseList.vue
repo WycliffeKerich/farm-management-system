@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import cropService from '@/services/crop.service';
+import { toApiDate } from '@/utils/dates';
 
 const router = useRouter();
 
@@ -179,7 +180,7 @@ const saveReport = async () => {
     try {
         const payload = {
             ...reportForm.value,
-            detected_date: reportForm.value.detected_date instanceof Date ? reportForm.value.detected_date.toISOString().split('T')[0] : reportForm.value.detected_date
+            detected_date: toApiDate(reportForm.value.detected_date)
         };
 
         await cropService.reportPestDisease(reportForm.value.batch_id, payload);

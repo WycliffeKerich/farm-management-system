@@ -3,6 +3,7 @@ const authRoutes = require('./auth.routes');
 const userRoutes = require('./user.routes');
 const cropRoutes = require('./crop.routes');
 const animalRoutes = require('./animal.routes');
+const inventoryRoutes = require('./inventory.routes');
 const { db } = require('../config/database');
 
 const router = express.Router();
@@ -39,8 +40,10 @@ router.use('/crops', cropRoutes);
 // Animal management routes
 router.use('/animals', animalRoutes);
 
+// Inventory management routes
+router.use('/inventory', inventoryRoutes);
+
 // TODO: Add more route modules as they are implemented
-// router.use('/inventory', inventoryRoutes);
 // router.use('/financial', financialRoutes);
 // router.use('/employees', employeeRoutes);
 // router.use('/tasks', taskRoutes);

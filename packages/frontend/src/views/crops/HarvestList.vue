@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
 import cropService from '@/services/crop.service';
+import { toApiDate } from '@/utils/dates';
 
 const confirm = useConfirm();
 const toast = useToast();
@@ -60,8 +61,8 @@ const loadHarvests = async () => {
             params.crop_type_id = filters.value.crop_type_id;
         }
         if (filters.value.dateRange && filters.value.dateRange.length === 2) {
-            params.start_date = formatDateForApi(filters.value.dateRange[0]);
-            params.end_date = formatDateForApi(filters.value.dateRange[1]);
+            params.start_date = toApiDate(filters.value.dateRange[0]);
+            params.end_date = toApiDate(filters.value.dateRange[1]);
         }
 
         const response = await cropService.getHarvests(params);
@@ -143,7 +144,7 @@ const saveHarvest = async () => {
     saving.value = true;
     try {
         const data = {
-            harvest_date: formatDateForApi(harvestForm.value.harvest_date),
+            harvest_date: toApiDate(harvestForm.value.harvest_date),
             quantity: harvestForm.value.quantity,
             unit: harvestForm.value.unit,
             quality_grade: harvestForm.value.quality_grade,
@@ -213,11 +214,6 @@ const deleteHarvest = async (harvest) => {
 const formatDate = (date) => {
     if (!date) return '';
     return new Date(date).toLocaleDateString();
-};
-
-const formatDateForApi = (date) => {
-    if (!date) return null;
-    return new Date(date).toISOString().split('T')[0];
 };
 
 const formatNumber = (num) => {

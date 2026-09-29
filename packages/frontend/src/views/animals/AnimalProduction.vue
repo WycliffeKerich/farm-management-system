@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
 import animalService from '@/services/animal.service';
+import { toApiDate } from '@/utils/dates';
 
 const confirm = useConfirm();
 const toast = useToast();
@@ -75,10 +76,10 @@ const loadRecords = async () => {
 
         // Format dates
         if (params.date_from) {
-            params.date_from = formatDateForApi(params.date_from);
+            params.date_from = toApiDate(params.date_from);
         }
         if (params.date_to) {
-            params.date_to = formatDateForApi(params.date_to);
+            params.date_to = toApiDate(params.date_to);
         }
 
         Object.keys(params).forEach((key) => {
@@ -110,10 +111,10 @@ const loadStatistics = async () => {
     try {
         const params = {};
         if (filters.value.date_from) {
-            params.date_from = formatDateForApi(filters.value.date_from);
+            params.date_from = toApiDate(filters.value.date_from);
         }
         if (filters.value.date_to) {
-            params.date_to = formatDateForApi(filters.value.date_to);
+            params.date_to = toApiDate(filters.value.date_to);
         }
 
         const response = await animalService.getProductionStatistics(params);
@@ -230,7 +231,7 @@ const saveRecord = async () => {
     try {
         const data = {
             production_type_id: recordForm.value.production_type_id,
-            production_date: formatDateForApi(recordForm.value.production_date),
+            production_date: toApiDate(recordForm.value.production_date),
             quantity: recordForm.value.quantity,
             quality_grade: recordForm.value.quality_grade,
             unit_price: recordForm.value.unit_price,
@@ -311,11 +312,6 @@ const deleteRecord = async (record) => {
 const formatDate = (date) => {
     if (!date) return '-';
     return new Date(date).toLocaleDateString();
-};
-
-const formatDateForApi = (date) => {
-    if (!date) return null;
-    return new Date(date).toISOString().split('T')[0];
 };
 
 const formatNumber = (value) => {

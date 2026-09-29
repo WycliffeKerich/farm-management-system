@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
 import cropService from '@/services/crop.service';
+import { toApiDate } from '@/utils/dates';
 
 const router = useRouter();
 const confirm = useConfirm();
@@ -194,7 +195,7 @@ const saveBatch = async () => {
         const data = {
             crop_variety_id: batchForm.value.crop_variety_id,
             location_id: batchForm.value.location_id,
-            planting_date: formatDateForApi(batchForm.value.planting_date),
+            planting_date: toApiDate(batchForm.value.planting_date),
             quantity_planted: batchForm.value.quantity_planted,
             unit: batchForm.value.unit,
             notes: batchForm.value.notes
@@ -297,11 +298,6 @@ const deleteBatch = async (batch) => {
 const formatDate = (date) => {
     if (!date) return '';
     return new Date(date).toLocaleDateString();
-};
-
-const formatDateForApi = (date) => {
-    if (!date) return null;
-    return new Date(date).toISOString().split('T')[0];
 };
 
 const formatStatus = (status) => {

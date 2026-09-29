@@ -13,6 +13,7 @@ import Select from 'primevue/select';
 import DatePicker from 'primevue/datepicker';
 import Tag from 'primevue/tag';
 import RadioButton from 'primevue/radiobutton';
+import { toApiDate } from '@/utils/dates';
 
 const toast = useToast();
 
@@ -67,8 +68,8 @@ const loadRecords = async () => {
     try {
         const params = {
             ...filters.value,
-            start_date: filters.value.start_date ? formatDateForAPI(filters.value.start_date) : null,
-            end_date: filters.value.end_date ? formatDateForAPI(filters.value.end_date) : null
+            start_date: filters.value.start_date ? toApiDate(filters.value.start_date) : null,
+            end_date: filters.value.end_date ? toApiDate(filters.value.end_date) : null
         };
 
         const response = await animalService.getHealthRecords(params);
@@ -83,8 +84,8 @@ const loadRecords = async () => {
 const loadStatistics = async () => {
     try {
         const params = {
-            start_date: filters.value.start_date ? formatDateForAPI(filters.value.start_date) : null,
-            end_date: filters.value.end_date ? formatDateForAPI(filters.value.end_date) : null
+            start_date: filters.value.start_date ? toApiDate(filters.value.start_date) : null,
+            end_date: filters.value.end_date ? toApiDate(filters.value.end_date) : null
         };
         const response = await animalService.getHealthStatistics(params);
         statistics.value = response.data.data;
@@ -182,8 +183,8 @@ const saveRecord = async () => {
     try {
         const data = {
             ...recordForm.value,
-            record_date: formatDateForAPI(recordForm.value.record_date),
-            next_followup_date: recordForm.value.next_followup_date ? formatDateForAPI(recordForm.value.next_followup_date) : null
+            record_date: toApiDate(recordForm.value.record_date),
+            next_followup_date: recordForm.value.next_followup_date ? toApiDate(recordForm.value.next_followup_date) : null
         };
 
         if (recordForm.value.id) {
@@ -242,12 +243,6 @@ const onSearch = () => {
 const formatDate = (date) => {
     if (!date) return '';
     return new Date(date).toLocaleDateString('en-KE', { year: 'numeric', month: 'short', day: 'numeric' });
-};
-
-const formatDateForAPI = (date) => {
-    if (!date) return null;
-    const d = new Date(date);
-    return d.toISOString().split('T')[0];
 };
 
 const formatCurrency = (value) => {

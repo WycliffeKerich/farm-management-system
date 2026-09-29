@@ -85,6 +85,42 @@ module.exports = {
     CHEQUE: 'cheque',
   },
 
+  // Inventory categories
+  INVENTORY_CATEGORIES: {
+    SEEDS: 'Seeds',
+    FEED: 'Feed',
+    FERTILIZER: 'Fertilizer',
+    PESTICIDE: 'Pesticide',
+    MEDICINE: 'Medicine',
+    EQUIPMENT: 'Equipment',
+    SUPPLIES: 'Supplies',
+  },
+
+  // Inventory transaction types
+  INVENTORY_TRANSACTION_TYPES: {
+    PURCHASE: 'purchase',
+    USAGE: 'usage',
+    ADJUSTMENT: 'adjustment',
+    RETURN: 'return',
+    EXPIRED: 'expired',
+    TRANSFER: 'transfer',
+    WASTE: 'waste',
+  },
+
+  // Ledger quantities are magnitudes; these types add to stock, the others
+  // (except the signed 'adjustment') remove from it
+  INVENTORY_INCOMING_TYPES: ['purchase', 'return'],
+  INVENTORY_OUTGOING_TYPES: ['usage', 'expired', 'transfer', 'waste'],
+
+  // Inventory reference types (for linking transactions to other entities)
+  INVENTORY_REFERENCE_TYPES: {
+    CROP_BATCH: 'crop_batch',
+    ANIMAL: 'animal',
+    ANIMAL_GROUP: 'animal_group',
+    TASK: 'task',
+    MANUAL: 'manual',
+  },
+
   // HTTP status codes
   HTTP_STATUS: {
     OK: 200,

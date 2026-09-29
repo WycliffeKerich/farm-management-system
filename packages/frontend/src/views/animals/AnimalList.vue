@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
 import animalService from '@/services/animal.service';
+import { toApiDate } from '@/utils/dates';
 
 const router = useRouter();
 const confirm = useConfirm();
@@ -277,8 +278,8 @@ const saveAnimal = async () => {
             tag_number: animalForm.value.tag_number || undefined,
             name: animalForm.value.name || undefined,
             gender: animalForm.value.gender,
-            date_of_birth: formatDateForApi(animalForm.value.birth_date),
-            date_acquired: formatDateForApi(animalForm.value.acquisition_date),
+            date_of_birth: toApiDate(animalForm.value.birth_date),
+            date_acquired: toApiDate(animalForm.value.acquisition_date),
             housing_id: animalForm.value.housing_id,
             acquisition_type: animalForm.value.acquisition_type,
             weight: animalForm.value.weight_kg,
@@ -349,7 +350,7 @@ const recordSale = async () => {
     saving.value = true;
     try {
         await animalService.recordAnimalSale(selectedAnimal.value.id, {
-            sale_date: formatDateForApi(saleForm.value.sale_date),
+            sale_date: toApiDate(saleForm.value.sale_date),
             sale_price: saleForm.value.sale_price,
             buyer_name: saleForm.value.buyer_name,
             notes: saleForm.value.notes
@@ -399,7 +400,7 @@ const recordDeath = async () => {
     saving.value = true;
     try {
         await animalService.recordAnimalDeath(selectedAnimal.value.id, {
-            death_date: formatDateForApi(deathForm.value.death_date),
+            death_date: toApiDate(deathForm.value.death_date),
             cause_category: deathForm.value.cause_category,
             cause_of_death: deathForm.value.cause_of_death,
             notes: deathForm.value.notes
@@ -462,11 +463,6 @@ const deleteAnimal = async (animal) => {
 const formatDate = (date) => {
     if (!date) return '-';
     return new Date(date).toLocaleDateString();
-};
-
-const formatDateForApi = (date) => {
-    if (!date) return null;
-    return new Date(date).toISOString().split('T')[0];
 };
 
 const formatStatus = (status) => {

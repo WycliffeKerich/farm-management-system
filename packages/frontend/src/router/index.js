@@ -180,6 +180,25 @@ export const routes = [
                 component: () => import('@/views/animals/AnimalSales.vue'),
                 meta: { breadcrumb: ['Animals', 'Sales'], menu: { section: 'animals', label: 'Sales', icon: 'pi pi-fw pi-shopping-cart' } }
             },
+            // Inventory
+            {
+                path: '/inventory',
+                name: 'inventory',
+                component: () => import('@/views/inventory/InventoryDashboard.vue'),
+                meta: { breadcrumb: ['Inventory', 'Dashboard'], menu: { section: 'inventory', label: 'Dashboard', icon: 'pi pi-fw pi-chart-pie' } }
+            },
+            {
+                path: '/inventory/items',
+                name: 'inventory-items',
+                component: () => import('@/views/inventory/ItemList.vue'),
+                meta: { breadcrumb: ['Inventory', 'Items'], menu: { section: 'inventory', label: 'Items', icon: 'pi pi-fw pi-box' } }
+            },
+            {
+                path: '/inventory/items/:id',
+                name: 'inventory-item-detail',
+                component: () => import('@/views/inventory/ItemDetail.vue'),
+                meta: { breadcrumb: ['Inventory', 'Item Detail'] }
+            },
             // Administration
             {
                 path: '/users',
