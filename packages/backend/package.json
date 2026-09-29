@@ -11,6 +11,7 @@
     "lint": "eslint \"src/**/*.js\" \"tests/**/*.js\"",
     "lint:fix": "eslint \"src/**/*.js\" \"tests/**/*.js\" --fix",
     "migrate": "node src/database/migrate.js",
+    "inventory:reconcile": "node src/database/inventory-reconcile.js",
     "seed": "node src/database/seed.js",
     "test:unit": "jest tests/unit",
     "test:integration": "jest tests/integration",
