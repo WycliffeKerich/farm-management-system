@@ -34,6 +34,16 @@ export function fromApiDate(value) {
 }
 
 /**
+ * Show a DATE string from the API as the same calendar day in the user's locale
+ * @param {string|null} value - 'YYYY-MM-DD'
+ * @returns {string}
+ */
+export function formatApiDate(value) {
+    const date = fromApiDate(value);
+    return date ? date.toLocaleDateString() : '';
+}
+
+/**
  * Whole days from today to a DATE string (negative once it has passed)
  * @param {string} value - 'YYYY-MM-DD'
  * @param {Date} [now]

@@ -431,6 +431,7 @@ Follow-ups (carried into Phase 4):
    - Every animal sale is checked against the meat withdrawal period, since a sold animal may be slaughtered. The owner overrides for breeding stock.
    - The owner can override with a reason; other roles get 403. The override is stored on the record (`withdrawal_override_reason`, `withdrawal_override_by`) until the Phase 5 audit log.
    - `GET /withdrawals/active?date=`.
+   - Selling without a sale record (`POST /individuals/:id/sale`, `PATCH /individuals/:id/status` to `sold`, and `POST /groups/:id/removal` with `type: 'sale'`) is also refused inside a meat withdrawal period. These routes have nowhere to keep an override, so the owner overrides by recording the sale through `POST /animals/sales`.
    - **Design:** nothing is stored on the animal, group or batch. Each dose or application keeps its own safe dates, and a product is held on a date while any record made on or before it has a safe date after it. Back-dated records and deletions stay correct without recalculation. A group is a counted flock: its holds come from the group's own treatments, and an animal's from its own.
 5. ~~Stock valuation (batch cost), reorder report, expiring-soon report.~~ Done: `GET /inventory/reports/valuation?category_id=`, `/reports/reorder?usage_days=`, `/reports/expiring?days=` (owner and manager).
    - **Valuation:** stock in a batch is valued at that batch's unit cost; stock held outside any batch at the item's cost per unit. Stock with no cost is reported as uncosted, not guessed. Expired and quarantined batches count until written off. The dashboard summary's values now come from the same calculation.
@@ -443,7 +444,11 @@ Follow-ups (carried into Phase 4):
    - Input applications (list page and batch detail) and feed records send `inventory_item_id`; picking an item fills the name and unit (and the feed's cost per unit). A feed record's item cannot change on edit.
    - Treatments have a doses section. A new treatment sends `doses`; when editing, each new dose is posted on its own and saved doses can be removed (owner and manager), which returns their stock. The free-text `medications` field stays for anything else.
    - Save errors in these forms now show the API's validation message. The input application list no longer offers the `growth_regulator` and `other` types, which the table's CHECK constraint rejects.
-2. Withdrawal/PHI badges on batch, animal and group detail pages; a warning dialog when recording a harvest or production during withdrawal.
+2. ~~Withdrawal/PHI badges on batch, animal and group detail pages; a warning dialog when recording a harvest or production during withdrawal.~~ Done. There are no animal or group detail pages yet, so the badges are on the animal and group list rows.
+   - `composables/useActiveHolds.js` reads `GET /withdrawals/active`. The batch page shows a pre-harvest interval banner. Animal and group rows show a badge per held product with its safe date. The harvest, production and sale forms warn when the chosen batch, animal or group is held.
+   - `composables/useWithdrawalGuard.js` with `components/withdrawals/WithdrawalDialog.vue` handles a 409 `WITHDRAWAL_ACTIVE` on every harvest, production record and sale form. The dialog lists the holds; the owner can give a reason and save anyway, and other roles are told when it can be recorded.
+   - The quick "Record Sale" dialogs on the animal and group lists now create a sale record (`POST /animals/sales`), and are shown to the owner and managers only. Before this, an animal's price and buyer were dropped. A group's sale was stored as a plain removal because the form sent `adjustment_type` rather than `type`.
+   - The `v-tooltip` directive is now registered, so the tooltips used across the list pages appear.
 3. Supplier management; purchase form with batch and expiry; valuation and reorder views.
 4. Adopt `useLazyTable` for the inventory lists (server-side pagination).
 
@@ -451,7 +456,8 @@ Follow-ups (carried into Phase 4):
 - Integration: application → stock decremented → cost stored → PHI set → harvest blocked → owner override allowed.
 - Rollback: a failed stock deduction leaves no application row.
 - Unit conversion.
-- Done: `crop-inputs.test.js` (9), `animal-withdrawals.test.js` (12) and `inventory-reports.test.js` (7). Backend total 182 tests.
+- Done: `crop-inputs.test.js` (9), `animal-withdrawals.test.js` (14) and `inventory-reports.test.js` (7). Backend total 184 tests.
+- Frontend: `utils/withdrawals.test.js` and `composables/useWithdrawalGuard.test.js`, with the product picker helpers in `utils/inventory.test.js`. Frontend total 57 tests.
 
 **Deliverables:** every spray, feed and dose deducts stock and carries a cost; harvesting or selling produce under withdrawal is prevented.
 

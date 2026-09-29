@@ -3,15 +3,21 @@ import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import cropService from '@/services/crop.service';
-import { toApiDate } from '@/utils/dates';
+import { formatApiDate, toApiDate } from '@/utils/dates';
 import { validationMessage } from '@/utils/forms';
+import { holdProducts } from '@/utils/withdrawals';
+import { useActiveHolds } from '@/composables/useActiveHolds';
 import { useStockItems } from '@/composables/useStockItems';
+import { useWithdrawalGuard } from '@/composables/useWithdrawalGuard';
 import ProductPicker from '@/components/inventory/ProductPicker.vue';
+import WithdrawalDialog from '@/components/withdrawals/WithdrawalDialog.vue';
 
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
 const stock = useStockItems();
+const holds = useActiveHolds();
+const withdrawalGuard = useWithdrawalGuard();
 
 // State
 const loading = ref(true);
@@ -73,6 +79,7 @@ const loadBatch = async () => {
     try {
         const response = await cropService.getBatchById(route.params.id);
         batch.value = response.data.data;
+        holds.load();
         // Load care schedule after batch data
         await loadCareSchedule();
     } catch (error) {
@@ -135,6 +142,19 @@ const openHarvestDialog = () => {
     harvestDialog.value = true;
 };
 
+// Today's pre-harvest interval on this batch, if any
+const harvestHold = computed(() => (batch.value ? holds.forBatch(batch.value.id) : null));
+const harvestDateHeld = computed(() => {
+    const date = toApiDate(harvestForm.value.harvest_date);
+    return Boolean(harvestHold.value && date && date < harvestHold.value.safe_from);
+});
+
+const onHarvestSaved = () => {
+    harvestDialog.value = false;
+    loadBatch();
+    toast.add({ severity: 'success', summary: 'Success', detail: 'Harvest recorded', life: 3000 });
+};
+
 const saveHarvest = async () => {
     if (!harvestForm.value.quantity || !harvestForm.value.unit) {
         toast.add({ severity: 'warn', summary: 'Warning', detail: 'Please fill required fields', life: 3000 });
@@ -143,12 +163,9 @@ const saveHarvest = async () => {
     saving.value = true;
     try {
         const data = { ...harvestForm.value, harvest_date: toApiDate(harvestForm.value.harvest_date) };
-        await cropService.recordHarvest(batch.value.id, data);
-        harvestDialog.value = false;
-        loadBatch();
-        toast.add({ severity: 'success', summary: 'Success', detail: 'Harvest recorded', life: 3000 });
+        await withdrawalGuard.attempt((override) => cropService.recordHarvest(batch.value.id, { ...data, ...override }), onHarvestSaved);
     } catch (error) {
-        toast.add({ severity: 'error', summary: 'Error', detail: error.response?.data?.message || 'Failed to save harvest', life: 3000 });
+        toast.add({ severity: 'error', summary: 'Error', detail: validationMessage(error, 'Failed to save harvest'), life: 3000 });
     } finally {
         saving.value = false;
     }
@@ -520,6 +537,9 @@ onMounted(() => {
                     <Button label="Change Status" icon="pi pi-sync" severity="secondary" outlined @click="openStatusDialog" />
                 </div>
             </div>
+            <Message v-if="harvestHold" severity="warn" :closable="false" class="mt-4">
+                Pre-harvest interval: do not harvest before <strong>{{ formatApiDate(harvestHold.safe_from) }}</strong> ({{ holdProducts(harvestHold) }}).
+            </Message>
         </div>
 
         <!-- Batch Details & Quick Actions -->
@@ -805,6 +825,7 @@ onMounted(() => {
                 <div class="flex flex-col gap-2">
                     <label class="font-medium">Harvest Date *</label>
                     <DatePicker v-model="harvestForm.harvest_date" dateFormat="yy-mm-dd" class="w-full" />
+                    <small v-if="harvestDateHeld" class="text-orange-600 dark:text-orange-400">Inside the pre-harvest interval: safe from {{ formatApiDate(harvestHold.safe_from) }}.</small>
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                     <div class="flex flex-col gap-2">
@@ -1060,6 +1081,8 @@ onMounted(() => {
                 <Button label="Skip Task" icon="pi pi-times" severity="warn" @click="skipTask" :loading="saving" />
             </template>
         </Dialog>
+
+        <WithdrawalDialog :guard="withdrawalGuard" />
     </div>
 
     <div v-else class="card text-center py-8">
