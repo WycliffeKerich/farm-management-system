@@ -1,45 +1,44 @@
 require('dotenv').config();
-const fs = require('fs');
-const path = require('path');
-const { db, testConnection } = require('../config/database');
+const { db, testConnection, closeDatabase } = require('../config/database');
+const { migrate } = require('./migrator');
 const logger = require('../utils/logger');
 
 /**
- * Run database migrations
- * Executes all SQL files in the migrations folder in order
+ * Run pending database migrations
+ *
+ * Usage:
+ *   npm run migrate                          Apply pending migrations
+ *   npm run migrate -- --baseline            Record all pending files as applied without running them
+ *                                            (one-off, for a database created before versioned migrations)
+ *   npm run migrate -- --mark-applied=a.sql,b.sql
+ *                                            Record specific files as applied without running them
  */
 async function runMigrations() {
+  const args = process.argv.slice(2);
+  const baseline = args.includes('--baseline');
+  const markArg = args.find((arg) => arg.startsWith('--mark-applied='));
+  const markApplied = markArg ? markArg.split('=')[1].split(',').filter(Boolean) : [];
+
   try {
     logger.info('Starting database migrations...');
 
-    // Test connection first
     const connected = await testConnection();
     if (!connected) {
       throw new Error('Database connection failed');
     }
 
-    // Get all migration files sorted by name
-    const migrationsDir = path.join(__dirname, '../../database/migrations');
-    const migrationFiles = fs.readdirSync(migrationsDir)
-      .filter(file => file.endsWith('.sql'))
-      .sort();
+    const result = await migrate({ db, baseline, markApplied, logger });
 
-    logger.info(`Found ${migrationFiles.length} migration file(s)`);
-
-    // Execute each migration
-    for (const file of migrationFiles) {
-      const migrationFile = path.join(migrationsDir, file);
-      const sql = fs.readFileSync(migrationFile, 'utf8');
-
-      logger.info(`Running migration: ${file}`);
-      await db.none(sql);
-      logger.info(`✓ Completed: ${file}`);
+    if (result.applied.length === 0 && result.baselined.length === 0) {
+      logger.info('✓ Database is up to date');
+    } else {
+      logger.info(`✓ Applied ${result.applied.length}, marked ${result.baselined.length} migration(s)`);
     }
-
-    logger.info('✓ All database migrations completed successfully');
+    closeDatabase();
     process.exit(0);
   } catch (error) {
-    logger.error('Migration failed:', error);
+    logger.error(`Migration failed: ${error.message}`);
+    closeDatabase();
     process.exit(1);
   }
 }

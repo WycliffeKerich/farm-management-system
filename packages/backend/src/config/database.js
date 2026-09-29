@@ -16,6 +16,12 @@ const initOptions = {
 
 const pgp = pgPromise(initOptions);
 
+// Return NUMERIC/DECIMAL (OID 1700) and BIGINT/COUNT(*) (OID 20) as JS numbers
+// instead of strings, so arithmetic and comparisons behave as expected.
+// NUMERIC(14,2) money values are well within double precision.
+pgp.pg.types.setTypeParser(1700, (value) => (value === null ? null : parseFloat(value)));
+pgp.pg.types.setTypeParser(20, (value) => (value === null ? null : parseInt(value, 10)));
+
 // Database connection configuration
 const config = {
   host: process.env.DB_HOST || 'localhost',
@@ -46,8 +52,34 @@ async function testConnection() {
   }
 }
 
+/**
+ * Run a callback inside a transaction.
+ * Sets `app.user_id` for the duration of the transaction so database-level
+ * auditing (Phase 5) can attribute changes to the acting user.
+ * @param {number|null} userId - Acting user ID (may be null for system actions)
+ * @param {Function} fn - async (t) => result
+ * @returns {Promise<*>} Result of fn
+ */
+async function withTx(userId, fn) {
+  return db.tx(async (t) => {
+    if (userId) {
+      await t.none("SELECT set_config('app.user_id', $1, true)", [String(userId)]);
+    }
+    return fn(t);
+  });
+}
+
+/**
+ * Close all pool connections (used by tests and scripts)
+ */
+function closeDatabase() {
+  pgp.end();
+}
+
 module.exports = {
   db,
   pgp,
   testConnection,
+  withTx,
+  closeDatabase,
 };
