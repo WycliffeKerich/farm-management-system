@@ -16,15 +16,15 @@ A comprehensive farm management system for smallholder farms, built with Node.js
 
 - **Backend**: Node.js + Express (JavaScript ES6+)
 - **Frontend**: Vue.js 3 + PrimeVue Sakai theme
-- **Database**: PostgreSQL
+- **Database**: PostgreSQL 18
 - **State Management**: Pinia
 - **Authentication**: JWT with refresh tokens
 
 ## Prerequisites
 
-- Node.js >= 18.0.0
-- npm >= 9.0.0
-- Docker and Docker Compose (for PostgreSQL)
+- Node.js 22 LTS (via [nvm](https://github.com/nvm-sh/nvm))
+- npm >= 10
+- PostgreSQL 18, installed locally (or Docker Compose, using the bundled `docker-compose.yml`)
 
 ## Getting Started
 
@@ -43,8 +43,10 @@ npm install
 
 ### 3. Start PostgreSQL database
 
+Use a local PostgreSQL 18 server with a role that has `CREATEDB`, since the test suite creates `farm_management_test` itself. Or start the containerised version:
+
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 ### 4. Set up environment variables
@@ -81,8 +83,7 @@ This will start both the backend and frontend servers concurrently.
 Farm_Management_System/
 ├── packages/
 │   ├── backend/          # Express API server
-│   ├── frontend/         # Vue.js 3 application
-│   └── shared/           # Shared types and constants
+│   └── frontend/         # Vue.js 3 application
 ├── docker-compose.yml    # PostgreSQL + pgAdmin setup
 ├── IMPLEMENTATION_PLAN.md # Detailed implementation plan
 └── README.md
@@ -111,19 +112,23 @@ Access pgAdmin at http://localhost:5050 to manage the PostgreSQL database:
 
 ## Implementation Phases
 
-The system is being built in 9 phases over 14 weeks:
+Roadmap revised on 2026-09-29: harden first, test always, and integrate the modules through a single activity and cost model.
 
-1. **Foundation** (Weeks 1-2): Project setup and authentication
-2. **Crop Management** (Weeks 3-4): Crop lifecycle and pest management
-3. **Animal Management** (Weeks 5-6): Animal tracking, health, and feed
-4. **Inventory Management** (Week 7): Stock tracking and alerts
-5. **Financial Management** (Weeks 8-9): Transactions and reports
-6. **Employee Management** (Week 10): Farmworker and attendance tracking
-7. **Task Management** (Week 11): Task assignment and progress tracking
-8. **Dashboard & Analytics** (Week 12): KPIs and visualizations
-9. **Testing & Refinement** (Weeks 13-14): Quality assurance
+| Phase | Scope | Status |
+|---|---|---|
+| 1 | Foundation: monorepo, API, auth, UI shell | ✅ Done |
+| 2 | Crop Management | ✅ Done |
+| 3 | Animal Management | ✅ Done |
+| **3.5** | **Hardening & test harness**: auth fixes, SQL safety, transactions, typed errors, soft deletes, versioned migrations, Jest/Vitest, CI | ⏭ Next (1.5 wk) |
+| 4 | Inventory completion: stock deduction from crop inputs, feed and treatments; PHI and withdrawal enforcement; suppliers | 🟡 WIP (1.5 wk) |
+| 5 | Activity model and platform: farm timeline, enterprises, audit log, attachments, settings, OpenAPI | 1.5 wk |
+| 6 | Finance and enterprise costing: sales, invoices, receivables, M-Pesa refs, cost of production, P&L | 2 wk |
+| 7 | Workforce: employees, attendance, Kenyan payroll, tasks, worker quick-log with QR codes | 2.5 wk |
+| 8 | Enterprise depth: beekeeping, mushrooms, greenhouse environment logs | 2 wk |
+| 9 | Dashboard, KPIs, notifications (SMS/WhatsApp), weather | 2 wk |
+| 10 | Production readiness: offline PWA, backups, deployment, E2E, security review | 3 wk |
 
-See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for detailed information.
+See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the details, current status and Definition of Done, and [PROMPTS_AND_TESTS.md](./PROMPTS_AND_TESTS.md) for the per-phase prompts and test specs.
 
 ## License
 
