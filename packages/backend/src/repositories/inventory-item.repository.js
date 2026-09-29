@@ -23,6 +23,13 @@ class InventoryItemRepository extends BaseRepository {
         'expiry_date',
         'notes',
         'is_active',
+        'active_ingredient',
+        'pre_harvest_interval_days',
+        'milk_withdrawal_days',
+        'meat_withdrawal_days',
+        'egg_withdrawal_days',
+        'reorder_quantity',
+        'default_supplier_id',
       ],
       sortable: ['name', 'item_code', 'current_stock', 'minimum_stock', 'expiry_date', 'created_at', 'updated_at'],
     });
