@@ -290,7 +290,7 @@ class ScheduledAnimalTaskRepository extends BaseRepository {
    * @returns {Promise<Object>}
    */
   async updateStatuses() {
-    await this.db.none('SELECT update_scheduled_animal_task_statuses()');
+    await this.db.func('update_scheduled_animal_task_statuses');
     return { updated: true };
   }
 

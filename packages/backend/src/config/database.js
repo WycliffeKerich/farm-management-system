@@ -22,6 +22,11 @@ const pgp = pgPromise(initOptions);
 pgp.pg.types.setTypeParser(1700, (value) => (value === null ? null : parseFloat(value)));
 pgp.pg.types.setTypeParser(20, (value) => (value === null ? null : parseInt(value, 10)));
 
+// Keep DATE (OID 1082) as a 'YYYY-MM-DD' string. The default parser builds a
+// local-midnight Date, which serialises to the previous day in UTC for any
+// server east of Greenwich (e.g. EAT, UTC+3).
+pgp.pg.types.setTypeParser(1082, (value) => value);
+
 // Database connection configuration
 const config = {
   host: process.env.DB_HOST || 'localhost',
@@ -63,7 +68,7 @@ async function testConnection() {
 async function withTx(userId, fn) {
   return db.tx(async (t) => {
     if (userId) {
-      await t.none("SELECT set_config('app.user_id', $1, true)", [String(userId)]);
+      await t.func('set_config', ['app.user_id', String(userId), true]);
     }
     return fn(t);
   });
