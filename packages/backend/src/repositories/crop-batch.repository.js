@@ -102,6 +102,16 @@ class CropBatchRepository extends BaseRepository {
       values.push(filters.planting_date_to);
     }
 
+    if (filters.search) {
+      conditions.push(`(
+        cb.batch_code ILIKE $${paramIndex} OR
+        cv.name ILIKE $${paramIndex} OR
+        ct.name ILIKE $${paramIndex}
+      )`);
+      values.push(`%${filters.search}%`);
+      paramIndex++;
+    }
+
     if (conditions.length > 0) {
       query += ` WHERE ${conditions.join(' AND ')}`;
     }

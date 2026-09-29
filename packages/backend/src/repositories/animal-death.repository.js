@@ -137,15 +137,15 @@ class AnimalDeathRepository extends BaseRepository {
     let query = `
       SELECT
         COUNT(*) as total_records,
-        SUM(quantity) as total_deaths,
-        COUNT(*) FILTER (WHERE cause_category = 'disease') as disease_deaths,
-        COUNT(*) FILTER (WHERE cause_category = 'predator') as predator_deaths,
-        COUNT(*) FILTER (WHERE cause_category = 'accident') as accident_deaths,
-        COUNT(*) FILTER (WHERE cause_category = 'natural') as natural_deaths,
-        COUNT(*) FILTER (WHERE cause_category = 'culled') as culled_deaths,
-        COUNT(*) FILTER (WHERE cause_category = 'slaughtered') as slaughtered_deaths,
-        COUNT(*) FILTER (WHERE cause_category = 'unknown') as unknown_deaths,
-        SUM(estimated_loss) as total_estimated_loss
+        SUM(ad.quantity) as total_deaths,
+        COUNT(*) FILTER (WHERE ad.cause_category = 'disease') as disease_deaths,
+        COUNT(*) FILTER (WHERE ad.cause_category = 'predator') as predator_deaths,
+        COUNT(*) FILTER (WHERE ad.cause_category = 'accident') as accident_deaths,
+        COUNT(*) FILTER (WHERE ad.cause_category = 'natural') as natural_deaths,
+        COUNT(*) FILTER (WHERE ad.cause_category = 'culled') as culled_deaths,
+        COUNT(*) FILTER (WHERE ad.cause_category = 'slaughtered') as slaughtered_deaths,
+        COUNT(*) FILTER (WHERE ad.cause_category = 'unknown') as unknown_deaths,
+        SUM(ad.estimated_loss) as total_estimated_loss
       FROM ${this.tableName} ad
       LEFT JOIN animals a ON ad.animal_id = a.id
       LEFT JOIN animal_groups ag ON ad.animal_group_id = ag.id
@@ -182,10 +182,10 @@ class AnimalDeathRepository extends BaseRepository {
   async getDeathsByCause(filters = {}) {
     let query = `
       SELECT
-        cause_category,
+        ad.cause_category,
         COUNT(*) as record_count,
-        SUM(quantity) as total_deaths,
-        SUM(estimated_loss) as total_loss
+        SUM(ad.quantity) as total_deaths,
+        SUM(ad.estimated_loss) as total_loss
       FROM ${this.tableName} ad
       WHERE ad.deleted_at IS NULL
     `;

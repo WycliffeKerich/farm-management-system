@@ -134,7 +134,7 @@ class AnimalGroupRepository extends BaseRepository {
       LEFT JOIN (
         SELECT animal_group_id, SUM(ABS(quantity)) as total_sold
         FROM animal_group_adjustments
-        WHERE adjustment_type = 'sale' AND deleted_at IS NULL
+        WHERE adjustment_type = 'sale'
         GROUP BY animal_group_id
       ) sale_stats ON ag.id = sale_stats.animal_group_id
       WHERE ag.id = $1 AND ag.deleted_at IS NULL

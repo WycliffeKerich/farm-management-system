@@ -180,7 +180,7 @@ class AnimalService {
         data.name,
         data.animal_type_id || breed.animal_type_id
       );
-      if (existing && existing.id !== id) {
+      if (existing && existing.id !== Number(id)) {
         throw new ConflictError('Breed with this name already exists for this animal type');
       }
     }

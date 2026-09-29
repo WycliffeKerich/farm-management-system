@@ -168,7 +168,7 @@ class CropService {
         data.name,
         data.crop_type_id || variety.crop_type_id
       );
-      if (existing && existing.id !== id) {
+      if (existing && existing.id !== Number(id)) {
         throw new ConflictError('Variety with this name already exists for this crop type');
       }
     }
@@ -359,11 +359,13 @@ class CropService {
     const batchCode = await cropBatchRepository.generateBatchCode(variety.crop_type_name);
 
     // Calculate expected harvest date
-    const growthDays = variety.variety_growth_days || variety.crop_type_growth_days;
+    const growthDays = variety.growth_days || variety.crop_type_growth_days;
     let expectedHarvestDate = null;
     if (growthDays && data.planting_date) {
-      const plantingDate = new Date(data.planting_date);
-      expectedHarvestDate = new Date(plantingDate.setDate(plantingDate.getDate() + growthDays));
+      // Date-only arithmetic in UTC so the server time zone cannot shift the day
+      const plantingDate = new Date(`${String(data.planting_date).slice(0, 10)}T00:00:00Z`);
+      plantingDate.setUTCDate(plantingDate.getUTCDate() + growthDays);
+      expectedHarvestDate = plantingDate.toISOString().slice(0, 10);
     }
 
     const batchData = {

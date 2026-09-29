@@ -526,14 +526,14 @@ router.delete(
 
 router.get(
   '/individuals/:animalId/health-records',
-  animalValidators.idParam,
+  animalValidators.animalIdParam,
   validate,
   animalController.getHealthRecordsByAnimal.bind(animalController)
 );
 
 router.get(
   '/groups/:groupId/health-records',
-  animalValidators.idParam,
+  animalValidators.groupIdParam,
   validate,
   animalController.getHealthRecordsByGroup.bind(animalController)
 );
@@ -588,14 +588,14 @@ router.delete(
 
 router.get(
   '/individuals/:animalId/diseases-treatments',
-  animalValidators.idParam,
+  animalValidators.animalIdParam,
   validate,
   animalController.getDiseaseTreatmentsByAnimal.bind(animalController)
 );
 
 router.get(
   '/groups/:groupId/diseases-treatments',
-  animalValidators.idParam,
+  animalValidators.groupIdParam,
   validate,
   animalController.getDiseaseTreatmentsByGroup.bind(animalController)
 );
@@ -647,14 +647,14 @@ router.delete(
 
 router.get(
   '/individuals/:animalId/feed-records',
-  animalValidators.idParam,
+  animalValidators.animalIdParam,
   validate,
   animalController.getFeedRecordsByAnimal.bind(animalController)
 );
 
 router.get(
   '/groups/:groupId/feed-records',
-  animalValidators.idParam,
+  animalValidators.groupIdParam,
   validate,
   animalController.getFeedRecordsByGroup.bind(animalController)
 );
@@ -707,14 +707,14 @@ router.delete(
 
 router.get(
   '/individuals/:animalId/breeding-records',
-  animalValidators.idParam,
+  animalValidators.animalIdParam,
   validate,
   animalController.getBreedingRecordsByAnimal.bind(animalController)
 );
 
 router.get(
   '/individuals/:animalId/breeding-performance',
-  animalValidators.idParam,
+  animalValidators.animalIdParam,
   validate,
   animalController.getBreedingPerformance.bind(animalController)
 );
@@ -810,7 +810,7 @@ router.delete(
 
 router.get(
   '/groups/:groupId/incubation-records',
-  animalValidators.idParam,
+  animalValidators.groupIdParam,
   validate,
   animalController.getIncubationRecordsByGroup.bind(animalController)
 );
