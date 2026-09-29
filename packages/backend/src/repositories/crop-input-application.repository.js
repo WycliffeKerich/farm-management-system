@@ -19,7 +19,7 @@ class CropInputApplicationRepository extends BaseRepository {
              u.first_name || ' ' || u.last_name as recorded_by_name
       FROM crop_input_applications cia
       LEFT JOIN users u ON cia.recorded_by = u.id
-      WHERE cia.batch_id = $1
+      WHERE cia.batch_id = $1 AND cia.deleted_at IS NULL
       ORDER BY cia.application_date DESC
     `;
     return await this.db.any(query, [batchId]);
@@ -37,7 +37,7 @@ class CropInputApplicationRepository extends BaseRepository {
              u.first_name || ' ' || u.last_name as recorded_by_name
       FROM crop_input_applications cia
       LEFT JOIN users u ON cia.recorded_by = u.id
-      WHERE cia.batch_id = $1 AND cia.input_type = $2
+      WHERE cia.batch_id = $1 AND cia.input_type = $2 AND cia.deleted_at IS NULL
       ORDER BY cia.application_date DESC
     `;
     return await this.db.any(query, [batchId, inputType]);
@@ -64,7 +64,7 @@ class CropInputApplicationRepository extends BaseRepository {
       LEFT JOIN users u ON cia.recorded_by = u.id
     `;
 
-    const conditions = [];
+    const conditions = ['cia.deleted_at IS NULL'];
     const values = [];
     let paramIndex = 1;
 
@@ -118,7 +118,7 @@ class CropInputApplicationRepository extends BaseRepository {
              COUNT(*) as application_count,
              COUNT(DISTINCT product_name) as unique_products
       FROM ${this.tableName}
-      WHERE batch_id = $1
+      WHERE batch_id = $1 AND deleted_at IS NULL
       GROUP BY input_type
       ORDER BY application_count DESC
     `;
@@ -134,11 +134,12 @@ class CropInputApplicationRepository extends BaseRepository {
     let query = `
       SELECT DISTINCT product_name
       FROM ${this.tableName}
+      WHERE deleted_at IS NULL
     `;
 
     const values = [];
     if (inputType) {
-      query += ' WHERE input_type = $1';
+      query += ' AND input_type = $1';
       values.push(inputType);
     }
 
@@ -155,7 +156,7 @@ class CropInputApplicationRepository extends BaseRepository {
     const query = `
       SELECT DISTINCT application_method
       FROM ${this.tableName}
-      WHERE application_method IS NOT NULL
+      WHERE application_method IS NOT NULL AND deleted_at IS NULL
       ORDER BY application_method ASC
     `;
     return await this.db.any(query);
@@ -176,6 +177,7 @@ class CropInputApplicationRepository extends BaseRepository {
       JOIN crop_batches cb ON cia.batch_id = cb.id
       JOIN crop_varieties cv ON cb.crop_variety_id = cv.id
       JOIN crop_types ct ON cv.crop_type_id = ct.id
+      WHERE cia.deleted_at IS NULL
       ORDER BY cia.application_date DESC
       LIMIT $1
     `;

@@ -1,5 +1,5 @@
 const animalProductionRepository = require('../repositories/animal-production.repository');
-const { AppError } = require('../middleware/error.middleware');
+const { AppError, ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
 
 class AnimalProductionService {
   // ==================== PRODUCTION TYPES ====================
@@ -11,7 +11,7 @@ class AnimalProductionService {
   async getProductionTypeById(id) {
     const type = await animalProductionRepository.findProductionTypeById(id);
     if (!type) {
-      throw new AppError('Production type not found', 404);
+      throw new NotFoundError('Production type not found');
     }
     return type;
   }
@@ -27,9 +27,12 @@ class AnimalProductionService {
 
   async deleteProductionType(id) {
     await this.getProductionTypeById(id);
+    if (await animalProductionRepository.productionTypeInUse(id)) {
+      throw new ConflictError('Cannot delete a production type that has records', 'IN_USE');
+    }
     const result = await animalProductionRepository.deleteProductionType(id);
     if (result.rowCount === 0) {
-      throw new AppError('Failed to delete production type', 500);
+      throw new AppError('Failed to delete production type', 500, 'SERVER_ERROR');
     }
     return { message: 'Production type deleted successfully' };
   }
@@ -43,7 +46,7 @@ class AnimalProductionService {
   async getProductionRecordById(id) {
     const record = await animalProductionRepository.findProductionRecordById(id);
     if (!record) {
-      throw new AppError('Production record not found', 404);
+      throw new NotFoundError('Production record not found');
     }
     return record;
   }
@@ -51,12 +54,14 @@ class AnimalProductionService {
   async createProductionRecord(data, userId) {
     // Validate that either animal_id or animal_group_id is provided
     if (!data.animal_id && !data.animal_group_id) {
-      throw new AppError('Either animal or animal group must be specified', 400);
+      throw new ValidationError('Either animal or animal group must be specified');
     }
 
     if (data.animal_id && data.animal_group_id) {
-      throw new AppError('Cannot specify both animal and animal group', 400);
+      throw new ValidationError('Cannot specify both animal and animal group');
     }
+
+    await this.getProductionTypeById(data.production_type_id);
 
     // Set recorded_by
     data.recorded_by = userId;
@@ -73,7 +78,7 @@ class AnimalProductionService {
     await this.getProductionRecordById(id);
     const result = await animalProductionRepository.deleteProductionRecord(id);
     if (result.rowCount === 0) {
-      throw new AppError('Failed to delete production record', 500);
+      throw new AppError('Failed to delete production record', 500, 'SERVER_ERROR');
     }
     return { message: 'Production record deleted successfully' };
   }

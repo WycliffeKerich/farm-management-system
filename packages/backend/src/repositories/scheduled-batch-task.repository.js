@@ -273,7 +273,7 @@ class ScheduledBatchTaskRepository extends BaseRepository {
    */
   async updateStatuses() {
     // Call the database function
-    await this.db.none('SELECT update_scheduled_task_statuses()');
+    await this.db.func('update_scheduled_task_statuses');
 
     // Return counts of each status
     const query = `

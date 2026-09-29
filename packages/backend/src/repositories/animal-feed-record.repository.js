@@ -1,4 +1,6 @@
 const BaseRepository = require('./base.repository');
+const { ValidationError } = require('../utils/errors');
+const { toSqlInt } = require('../utils/sql');
 
 /**
  * Repository for animal_feed_records table operations
@@ -328,7 +330,7 @@ class AnimalFeedRecordRepository extends BaseRepository {
       LEFT JOIN animal_breeds ab ON COALESCE(a.animal_breed_id, ag.animal_breed_id) = ab.id
       LEFT JOIN animal_types at ON ab.animal_type_id = at.id
       WHERE afr.deleted_at IS NULL
-        AND afr.feed_date >= CURRENT_DATE - INTERVAL '${days} days'
+        AND afr.feed_date >= CURRENT_DATE - make_interval(days => ${toSqlInt(days, { name: 'days' })})
       ORDER BY afr.feed_date DESC, afr.feeding_time DESC, afr.created_at DESC
       LIMIT $1
     `;
@@ -344,7 +346,7 @@ class AnimalFeedRecordRepository extends BaseRepository {
    */
   async getAverageDailyCost(animalId = null, groupId = null, days = 30) {
     if (!animalId && !groupId) {
-      throw new Error('Either animalId or groupId must be provided');
+      throw new ValidationError('Either animalId or groupId must be provided');
     }
 
     const condition = animalId ? 'animal_id = $1' : 'animal_group_id = $1';
@@ -362,7 +364,7 @@ class AnimalFeedRecordRepository extends BaseRepository {
         FROM ${this.tableName}
         WHERE ${condition}
           AND deleted_at IS NULL
-          AND feed_date >= CURRENT_DATE - INTERVAL '${days} days'
+          AND feed_date >= CURRENT_DATE - make_interval(days => ${toSqlInt(days, { name: 'days' })})
         GROUP BY feed_date
       ) daily_totals
     `;

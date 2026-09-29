@@ -15,7 +15,7 @@ class GrowingLocationRepository extends BaseRepository {
   async findAllActive() {
     const query = `
       SELECT * FROM ${this.tableName}
-      WHERE is_active = true
+      WHERE is_active = true AND deleted_at IS NULL
       ORDER BY name ASC
     `;
     return await this.db.any(query);
@@ -30,7 +30,8 @@ class GrowingLocationRepository extends BaseRepository {
       SELECT gl.*,
              COUNT(cb.id) FILTER (WHERE cb.status IN ('planted', 'growing', 'harvesting')) as active_batches_count
       FROM growing_locations gl
-      LEFT JOIN crop_batches cb ON gl.id = cb.location_id
+      LEFT JOIN crop_batches cb ON gl.id = cb.location_id AND cb.deleted_at IS NULL
+      WHERE gl.deleted_at IS NULL
       GROUP BY gl.id
       ORDER BY gl.name ASC
     `;
@@ -43,7 +44,7 @@ class GrowingLocationRepository extends BaseRepository {
    * @returns {Promise<Object|null>}
    */
   async findByName(name) {
-    const query = `SELECT * FROM ${this.tableName} WHERE LOWER(name) = LOWER($1)`;
+    const query = `SELECT * FROM ${this.tableName} WHERE LOWER(name) = LOWER($1) AND deleted_at IS NULL`;
     return await this.db.oneOrNone(query, [name]);
   }
 
@@ -55,7 +56,7 @@ class GrowingLocationRepository extends BaseRepository {
   async findByType(type) {
     const query = `
       SELECT * FROM ${this.tableName}
-      WHERE type = $1 AND is_active = true
+      WHERE type = $1 AND is_active = true AND deleted_at IS NULL
       ORDER BY name ASC
     `;
     return await this.db.any(query, [type]);
@@ -66,7 +67,7 @@ class GrowingLocationRepository extends BaseRepository {
    * @returns {Promise<Array>}
    */
   async getTypes() {
-    const query = `SELECT DISTINCT type FROM ${this.tableName} ORDER BY type ASC`;
+    const query = `SELECT DISTINCT type FROM ${this.tableName} WHERE deleted_at IS NULL ORDER BY type ASC`;
     return await this.db.any(query);
   }
 

@@ -25,6 +25,8 @@ const consoleFormat = winston.format.combine(
 
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
+  // Keep test output clean; set LOG_LEVEL and TEST_LOGS=1 to debug
+  silent: process.env.NODE_ENV === 'test' && !process.env.TEST_LOGS,
   format: logFormat,
   transports: [
     // Console output

@@ -20,8 +20,9 @@ async function runSeeds() {
 
     // Get all seed files sorted by name
     const seedsDir = path.join(__dirname, '../../database/seeds');
-    const seedFiles = fs.readdirSync(seedsDir)
-      .filter(file => file.endsWith('.sql'))
+    const seedFiles = fs
+      .readdirSync(seedsDir)
+      .filter((file) => file.endsWith('.sql'))
       .sort();
 
     logger.info(`Found ${seedFiles.length} seed file(s)`);

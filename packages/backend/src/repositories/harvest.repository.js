@@ -19,7 +19,7 @@ class HarvestRepository extends BaseRepository {
              u.first_name || ' ' || u.last_name as recorded_by_name
       FROM harvests h
       LEFT JOIN users u ON h.recorded_by = u.id
-      WHERE h.batch_id = $1
+      WHERE h.batch_id = $1 AND h.deleted_at IS NULL
       ORDER BY h.harvest_date DESC
     `;
     return await this.db.any(query, [batchId]);
@@ -36,7 +36,7 @@ class HarvestRepository extends BaseRepository {
              unit,
              COUNT(*) as harvest_count
       FROM ${this.tableName}
-      WHERE batch_id = $1
+      WHERE batch_id = $1 AND deleted_at IS NULL
       GROUP BY unit
     `;
     return await this.db.oneOrNone(query, [batchId]);
@@ -63,7 +63,7 @@ class HarvestRepository extends BaseRepository {
       LEFT JOIN users u ON h.recorded_by = u.id
     `;
 
-    const conditions = [];
+    const conditions = ['h.deleted_at IS NULL'];
     const values = [];
     let paramIndex = 1;
 
@@ -118,7 +118,7 @@ class HarvestRepository extends BaseRepository {
       JOIN crop_batches cb ON h.batch_id = cb.id
       JOIN crop_varieties cv ON cb.crop_variety_id = cv.id
       JOIN crop_types ct ON cv.crop_type_id = ct.id
-      WHERE h.harvest_date BETWEEN $1 AND $2
+      WHERE h.harvest_date BETWEEN $1 AND $2 AND h.deleted_at IS NULL
       GROUP BY ct.name, h.unit
       ORDER BY total_quantity DESC
     `;
@@ -136,7 +136,7 @@ class HarvestRepository extends BaseRepository {
              SUM(quantity) as total_quantity,
              COUNT(*) as harvest_count
       FROM ${this.tableName}
-      WHERE batch_id = $1
+      WHERE batch_id = $1 AND deleted_at IS NULL
       GROUP BY grade
       ORDER BY grade ASC
     `;
@@ -151,7 +151,7 @@ class HarvestRepository extends BaseRepository {
     const query = `
       SELECT DISTINCT grade
       FROM ${this.tableName}
-      WHERE grade IS NOT NULL
+      WHERE grade IS NOT NULL AND deleted_at IS NULL
       ORDER BY grade ASC
     `;
     return await this.db.any(query);

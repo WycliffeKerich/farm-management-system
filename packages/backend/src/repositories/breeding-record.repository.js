@@ -1,4 +1,5 @@
 const BaseRepository = require('./base.repository');
+const { toSqlInt } = require('../utils/sql');
 
 /**
  * Repository for breeding_records table operations
@@ -255,7 +256,7 @@ class BreedingRecordRepository extends BaseRepository {
         AND br.actual_delivery_date IS NULL
         AND br.expected_delivery_date IS NOT NULL
         AND br.expected_delivery_date >= CURRENT_DATE
-        AND br.expected_delivery_date <= CURRENT_DATE + INTERVAL '${days} days'
+        AND br.expected_delivery_date <= CURRENT_DATE + make_interval(days => ${toSqlInt(days, { name: 'days' })})
       ORDER BY br.expected_delivery_date ASC
       LIMIT $1
     `;
@@ -340,7 +341,7 @@ class BreedingRecordRepository extends BaseRepository {
       LEFT JOIN animal_breeds male_breed ON male.animal_breed_id = male_breed.id
       LEFT JOIN animal_types at ON male_breed.animal_type_id = at.id
       WHERE br.deleted_at IS NULL
-        AND br.breeding_date >= CURRENT_DATE - INTERVAL '${days} days'
+        AND br.breeding_date >= CURRENT_DATE - make_interval(days => ${toSqlInt(days, { name: 'days' })})
       ORDER BY br.breeding_date DESC, br.created_at DESC
       LIMIT $1
     `;

@@ -1,4 +1,5 @@
 const BaseRepository = require('./base.repository');
+const { toSqlInt } = require('../utils/sql');
 
 /**
  * Repository for animal_diseases_treatments table operations
@@ -301,7 +302,7 @@ class AnimalDiseaseTreatmentRepository extends BaseRepository {
       LEFT JOIN animal_breeds ab ON COALESCE(a.animal_breed_id, ag.animal_breed_id) = ab.id
       LEFT JOIN animal_types at ON ab.animal_type_id = at.id
       WHERE adt.deleted_at IS NULL
-        AND adt.diagnosis_date >= CURRENT_DATE - INTERVAL '${days} days'
+        AND adt.diagnosis_date >= CURRENT_DATE - make_interval(days => ${toSqlInt(days, { name: 'days' })})
       ORDER BY adt.diagnosis_date DESC, adt.created_at DESC
       LIMIT $1
     `;

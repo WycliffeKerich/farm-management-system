@@ -17,7 +17,8 @@ class CropTypeRepository extends BaseRepository {
       SELECT ct.*,
              COUNT(cv.id) as varieties_count
       FROM crop_types ct
-      LEFT JOIN crop_varieties cv ON ct.id = cv.crop_type_id
+      LEFT JOIN crop_varieties cv ON ct.id = cv.crop_type_id AND cv.deleted_at IS NULL
+      WHERE ct.deleted_at IS NULL
       GROUP BY ct.id
       ORDER BY ct.name ASC
     `;
@@ -30,7 +31,7 @@ class CropTypeRepository extends BaseRepository {
    * @returns {Promise<Object|null>}
    */
   async findByName(name) {
-    const query = `SELECT * FROM ${this.tableName} WHERE LOWER(name) = LOWER($1)`;
+    const query = `SELECT * FROM ${this.tableName} WHERE LOWER(name) = LOWER($1) AND deleted_at IS NULL`;
     return await this.db.oneOrNone(query, [name]);
   }
 
@@ -40,7 +41,7 @@ class CropTypeRepository extends BaseRepository {
    * @returns {Promise<Array>}
    */
   async findByCategory(category) {
-    const query = `SELECT * FROM ${this.tableName} WHERE category = $1 ORDER BY name ASC`;
+    const query = `SELECT * FROM ${this.tableName} WHERE category = $1 AND deleted_at IS NULL ORDER BY name ASC`;
     return await this.db.any(query, [category]);
   }
 
@@ -49,7 +50,7 @@ class CropTypeRepository extends BaseRepository {
    * @returns {Promise<Array>}
    */
   async getCategories() {
-    const query = `SELECT DISTINCT category FROM ${this.tableName} ORDER BY category ASC`;
+    const query = `SELECT DISTINCT category FROM ${this.tableName} WHERE deleted_at IS NULL ORDER BY category ASC`;
     return await this.db.any(query);
   }
 }

@@ -1,4 +1,5 @@
 const BaseRepository = require('./base.repository');
+const { toSqlInt } = require('../utils/sql');
 
 /**
  * Repository for animal_deaths table operations
@@ -136,15 +137,15 @@ class AnimalDeathRepository extends BaseRepository {
     let query = `
       SELECT
         COUNT(*) as total_records,
-        SUM(quantity) as total_deaths,
-        COUNT(*) FILTER (WHERE cause_category = 'disease') as disease_deaths,
-        COUNT(*) FILTER (WHERE cause_category = 'predator') as predator_deaths,
-        COUNT(*) FILTER (WHERE cause_category = 'accident') as accident_deaths,
-        COUNT(*) FILTER (WHERE cause_category = 'natural') as natural_deaths,
-        COUNT(*) FILTER (WHERE cause_category = 'culled') as culled_deaths,
-        COUNT(*) FILTER (WHERE cause_category = 'slaughtered') as slaughtered_deaths,
-        COUNT(*) FILTER (WHERE cause_category = 'unknown') as unknown_deaths,
-        SUM(estimated_loss) as total_estimated_loss
+        SUM(ad.quantity) as total_deaths,
+        COUNT(*) FILTER (WHERE ad.cause_category = 'disease') as disease_deaths,
+        COUNT(*) FILTER (WHERE ad.cause_category = 'predator') as predator_deaths,
+        COUNT(*) FILTER (WHERE ad.cause_category = 'accident') as accident_deaths,
+        COUNT(*) FILTER (WHERE ad.cause_category = 'natural') as natural_deaths,
+        COUNT(*) FILTER (WHERE ad.cause_category = 'culled') as culled_deaths,
+        COUNT(*) FILTER (WHERE ad.cause_category = 'slaughtered') as slaughtered_deaths,
+        COUNT(*) FILTER (WHERE ad.cause_category = 'unknown') as unknown_deaths,
+        SUM(ad.estimated_loss) as total_estimated_loss
       FROM ${this.tableName} ad
       LEFT JOIN animals a ON ad.animal_id = a.id
       LEFT JOIN animal_groups ag ON ad.animal_group_id = ag.id
@@ -181,10 +182,10 @@ class AnimalDeathRepository extends BaseRepository {
   async getDeathsByCause(filters = {}) {
     let query = `
       SELECT
-        cause_category,
+        ad.cause_category,
         COUNT(*) as record_count,
-        SUM(quantity) as total_deaths,
-        SUM(estimated_loss) as total_loss
+        SUM(ad.quantity) as total_deaths,
+        SUM(ad.estimated_loss) as total_loss
       FROM ${this.tableName} ad
       WHERE ad.deleted_at IS NULL
     `;
@@ -251,7 +252,7 @@ class AnimalDeathRepository extends BaseRepository {
       LEFT JOIN animal_breeds ab ON COALESCE(a.animal_breed_id, ag.animal_breed_id) = ab.id
       LEFT JOIN animal_types at ON ab.animal_type_id = at.id
       WHERE ad.deleted_at IS NULL
-        AND ad.death_date >= CURRENT_DATE - INTERVAL '${days} days'
+        AND ad.death_date >= CURRENT_DATE - make_interval(days => ${toSqlInt(days, { name: 'days' })})
       ORDER BY ad.death_date DESC, ad.created_at DESC
       LIMIT $1
     `;

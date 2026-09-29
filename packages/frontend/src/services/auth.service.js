@@ -1,71 +1,90 @@
-import api from './api';
+import api, { refreshSession, setAccessToken } from './api';
 
 /**
- * Authentication service for login, logout, and user management
+ * Authentication API: session, profile, first-run setup and password reset
  */
 const authService = {
     /**
-     * Login user with email and password
-     * @param {string} email - User email
-     * @param {string} password - User password
-     * @returns {Promise<Object>} Login response with user and token
+     * @returns {Promise<{user: Object, accessToken: string}>}
      */
     async login(email, password) {
         const response = await api.post('/auth/login', { email, password });
-        return response.data;
+        setAccessToken(response.data.data.accessToken);
+        return response.data.data;
     },
 
     /**
-     * Logout current user
-     * @returns {Promise<void>}
+     * Revoke this device's session. The local token is cleared even if the call fails.
      */
     async logout() {
         try {
             await api.post('/auth/logout');
         } finally {
-            localStorage.removeItem('accessToken');
+            setAccessToken(null);
         }
     },
 
     /**
-     * Get current user profile
-     * @returns {Promise<Object>} User profile data
+     * Sign out of every device
      */
+    async logoutAll() {
+        try {
+            await api.post('/auth/logout-all');
+        } finally {
+            setAccessToken(null);
+        }
+    },
+
+    /**
+     * Restore a session from the refresh cookie
+     * @returns {Promise<{user: Object, accessToken: string}>}
+     */
+    refresh() {
+        return refreshSession();
+    },
+
     async getCurrentUser() {
         const response = await api.get('/auth/me');
-        return response.data;
+        return response.data.data;
     },
 
     /**
-     * Refresh access token
-     * @returns {Promise<Object>} New access token
-     */
-    async refreshToken() {
-        const response = await api.post('/auth/refresh');
-        return response.data;
-    },
-
-    /**
-     * Update user profile
-     * @param {Object} data - Profile data to update
-     * @returns {Promise<Object>} Updated user profile
+     * @param {Object} data - { first_name, last_name, phone }
      */
     async updateProfile(data) {
-        const response = await api.put('/auth/profile', data);
+        const response = await api.put('/auth/me', data);
+        return response.data.data;
+    },
+
+    async changePassword(currentPassword, newPassword, confirmPassword) {
+        const response = await api.put('/auth/change-password', { currentPassword, newPassword, confirmPassword });
         return response.data;
     },
 
     /**
-     * Change user password
-     * @param {string} currentPassword - Current password
-     * @param {string} newPassword - New password
-     * @returns {Promise<Object>} Success response
+     * @returns {Promise<boolean>} Whether the first owner still has to be created
      */
-    async changePassword(currentPassword, newPassword) {
-        const response = await api.put('/auth/password', {
-            currentPassword,
-            newPassword
-        });
+    async needsSetup() {
+        const response = await api.get('/auth/bootstrap');
+        return response.data.data.needsSetup;
+    },
+
+    /**
+     * Create the first owner account
+     * @param {Object} data - { email, password, first_name, last_name, phone }
+     */
+    async bootstrap(data) {
+        const response = await api.post('/auth/bootstrap', data);
+        return response.data;
+    },
+
+    async forgotPassword(email) {
+        const response = await api.post('/auth/forgot-password', { email });
+        return response.data;
+    },
+
+    async resetPassword(token, password) {
+        const response = await api.post('/auth/reset-password', { token, password });
         return response.data;
     }
 };

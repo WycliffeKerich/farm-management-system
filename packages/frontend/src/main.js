@@ -3,6 +3,7 @@ import { createPinia } from 'pinia';
 import App from './App.vue';
 import router from './router';
 import { useAuthStore } from './stores/auth.store';
+import { setSessionExpiredHandler } from './services/api';
 
 import Aura from '@primeuix/themes/aura';
 import PrimeVue from 'primevue/config';
@@ -28,8 +29,15 @@ app.use(PrimeVue, {
 app.use(ToastService);
 app.use(ConfirmationService);
 
-// Initialize auth store before mounting
+// A refresh failed mid-session: drop the local session and ask the user to sign in again
 const authStore = useAuthStore();
-authStore.initialize().then(() => {
-    app.mount('#app');
+setSessionExpiredHandler(() => {
+    authStore.clearSession();
+    const current = router.currentRoute.value;
+    if (current.meta.requiresAuth || current.matched.some((record) => record.meta.requiresAuth)) {
+        router.push({ name: 'login', query: { redirect: current.fullPath } });
+    }
 });
+
+// The router guard restores the session (refresh cookie) before the first page renders
+app.mount('#app');

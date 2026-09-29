@@ -111,6 +111,7 @@ class BatchCareScheduleRepository extends BaseRepository {
       JOIN crop_types ct ON cv.crop_type_id = ct.id
       LEFT JOIN growing_locations gl ON cb.location_id = gl.id
       WHERE bcs.deleted_at IS NULL
+        AND cb.deleted_at IS NULL
     `;
 
     const conditions = [];

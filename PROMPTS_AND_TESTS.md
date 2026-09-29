@@ -71,25 +71,30 @@ Brief description of changes
 - [ ] Phase 1: Foundation
 - [ ] Phase 2: Crop Management
 - [ ] Phase 3: Animal Management
-- [ ] Phase 4: Inventory
-- [ ] Phase 5: Financial
-- [ ] Phase 6: Employee
-- [ ] Phase 7: Task Management
-- [ ] Phase 8: Dashboard
+- [ ] Phase 3.5: Hardening & Test Harness
+- [ ] Phase 4: Inventory Completion & Integration
+- [ ] Phase 5: Activity Model & Platform
+- [ ] Phase 6: Finance & Enterprise Costing
+- [ ] Phase 7: Workforce (Tasks, Employees, Payroll)
+- [ ] Phase 8: Enterprise Depth (Bees, Mushrooms, Greenhouse)
+- [ ] Phase 9: Dashboard, KPIs & Notifications
+- [ ] Phase 10: Production Readiness & PWA
 
 ## Testing
 
-- [ ] Unit tests added/updated
-- [ ] Integration tests added/updated
-- [ ] Manual testing completed
+- [ ] Integration tests: happy path, validation, authorization (each role), not-found
+- [ ] Rollback test for every multi-write
+- [ ] Manual testing against the local PostgreSQL
 
-## Checklist
+## Definition of Done
 
-- [ ] Code follows project style guidelines
-- [ ] Self-review completed
-- [ ] Documentation updated
+- [ ] Migrations versioned and run cleanly on a fresh DB and the current local DB
+- [ ] No `throw new Error` in services; multi-row writes use `db.tx`
+- [ ] Repositories declare `columns`/`sortable` whitelists
+- [ ] OpenAPI spec updated (from Phase 5)
+- [ ] Menu shows only built, role-permitted routes
+- [ ] README / IMPLEMENTATION_PLAN "Current Status" updated
 - [ ] No console.log or debug code
-- [ ] Database migrations included (if applicable)
 ```
 
 ### GitHub Actions CI/CD
@@ -106,15 +111,28 @@ on:
     branches: [main, develop]
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run lint
+      # From Phase 5:
+      # - run: npx @redocly/cli lint packages/backend/openapi/openapi.yaml
+
   test-backend:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:15
+        image: postgres:18 # match local PostgreSQL 18
         env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: farm_test
+          POSTGRES_USER: farm_admin
+          POSTGRES_PASSWORD: farm_password_dev
+          POSTGRES_DB: postgres
         ports:
           - 5432:5432
         options: >-
@@ -122,23 +140,24 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
+    env:
+      NODE_ENV: test
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: farm_admin
+      DB_PASSWORD: farm_password_dev
+      DB_NAME: farm_management_test # created + migrated by jest globalSetup
+      JWT_SECRET: test-secret
+      JWT_REFRESH_SECRET: test-refresh-secret
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run backend tests
-        run: npm run test:backend
-        env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/farm_test
-          JWT_SECRET: test-secret
-          JWT_REFRESH_SECRET: test-refresh-secret
+      - run: npm ci
+      - name: Backend tests (with coverage gate)
+        run: npm run test:ci --workspace=packages/backend
 
   test-frontend:
     runs-on: ubuntu-latest
@@ -146,30 +165,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run frontend tests
-        run: npm run test:frontend
-
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run linting
-        run: npm run lint
+      - run: npm ci
+      - run: npm run test:frontend
+      - run: npm run build:frontend
 ```
+
+Protect `develop` as well as `main`: require the `lint`, `test-backend` and `test-frontend` checks before merging.
 
 ---
 
@@ -1092,828 +1095,868 @@ describe("Animal API", () => {
 
 ---
 
-## Phase 4: Inventory Management
+
+## Revised Roadmap (2026-09-29)
+
+> Phases 1–3 above are delivered. From here on, the phases follow the revised [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md): **3.5 → 4 → 5 → 6 → 7 → 8 → 9 → 10**.
+> Every phase must meet the **Definition of Done** before merging into `develop`:
+> - Versioned migrations.
+> - Integration tests for happy path, validation, authorization (per role) and not-found.
+> - A rollback test for every multi-write.
+> - CI green; OpenAPI updated (from Phase 5).
+> - The menu shows only built routes.
+> - Manually tested against the local PostgreSQL.
+>
+> **Standing rules for every prompt below:**
+> - Services throw typed errors from `utils/errors.js`, never `throw new Error`.
+> - Multi-row writes run in `db.tx(async t => …)`, with `t` passed to repositories.
+> - Repositories declare `columns` and `sortable` whitelists.
+> - Money is `NUMERIC(14,2)`.
+> - Lists use server-side pagination.
+> - Every bug fix ships with a regression test.
+
+---
+
+## Phase 3.5: Hardening & Test Harness
+
+### Git Workflow for Phase 3.5
+
+```bash
+# 0. Park the uncommitted Phase 4 inventory work on its own branch
+git checkout -b feature/phase-4-inventory
+git add -A && git commit -m "wip(phase-4): inventory module work in progress"
+git checkout develop
+
+# 1. Hardening branch from the clean develop
+git checkout -b feature/phase-3.5-hardening
+
+# ... work, commit per fix (fix(auth): ..., fix(repo): ..., test(...): ...)
+
+# 2. After merge, rebase inventory onto the hardened develop
+git checkout feature/phase-4-inventory
+git rebase develop
+```
+
+### Prompt 3.5.1: Test Harness First
+
+```
+Set up the backend and frontend test harness so every hardening fix lands with a test.
+
+Backend (packages/backend):
+1. jest.config.js:
+   - testEnvironment node, roots ['<rootDir>/tests']
+   - globalSetup tests/setup/global-setup.js, globalTeardown tests/setup/global-teardown.js
+   - setupFilesAfterEnv tests/setup/after-env.js
+   - coverageThreshold of 60% lines on src/services, src/repositories and src/middleware
+2. tests/setup/global-setup.js:
+   - Connects to the `postgres` maintenance DB on the local server with the DB_HOST/DB_PORT/DB_USER/DB_PASSWORD from packages/backend/.env (the local role has CREATEDB).
+   - Creates `farm_management_test` if it does not exist, then runs the versioned migration runner against it.
+   - Tests use DB_NAME=farm_management_test, set via tests/setup/env.js loaded by `setupFiles`.
+3. tests/setup/after-env.js: `truncateAll()` helper (TRUNCATE all app tables except schema_migrations RESTART IDENTITY CASCADE), and `afterAll(() => db.$pool.end())`.
+4. tests/factories/*.js:
+   - createUser({ role }) and loginAs(role), which return { user, accessToken, agent }, where agent is a supertest agent holding the refresh cookie
+   - createCategory, createUnit, createItem, createBatch, createCropBatch, createAnimal, createAnimalGroup
+5. Export `app` from src/app.js without calling listen, so supertest can use it.
+6. Update scripts:
+   - backend: "test", "test:unit", "test:integration", "test:ci" (--runInBand --ci --coverage)
+   - root: fix "test:frontend" and remove "build:backend"
+
+Frontend (packages/frontend):
+1. Add vitest, @vue/test-utils and jsdom. Use the vitest config inside vite.config.js (environment jsdom).
+2. Add a "test" script. Tests live in tests/unit/**.
+
+CI: create .github/workflows/ci.yml (template in this document), using Node 22 and postgres:18.
+
+Verify:
+- `npm run test:backend` passes locally against the local PostgreSQL, with a smoke test hitting GET /api/v1/health.
+- `npm run test:frontend` passes.
+```
+
+### Prompt 3.5.2: Auth & Session Hardening
+
+```
+Harden authentication (findings F1, F3, F10, F11, F12):
+
+1. Remove public POST /auth/register. Add:
+   - POST /auth/bootstrap: creates the first owner, and only if the users table is empty; otherwise 409.
+   - Owner-only /users routes: GET list, POST create, PUT update (role, is_active), PATCH /users/:id/status, DELETE /users/:id/sessions (revoke all).
+   - Validators never accept `role` from a non-owner.
+2. updateProfile whitelists first_name, last_name and phone. Any other key is ignored.
+3. Import AuthenticationError in auth.controller.js.
+4. Rate limits:
+   - Delete the global /api limiter.
+   - loginLimiter: 5 attempts / 15 min, keyed by IP + lowercased email.
+   - refreshLimiter and forgotLimiter: 30 / 15 min per IP.
+   - users.failed_login_count and locked_until: lock for 15 minutes after 10 consecutive failures; reset on success.
+5. Refresh tokens:
+   - Opaque random 256-bit tokens, stored as SHA-256 in user_sessions with family_id, expires_at, revoked_at, replaced_by, user_agent and ip.
+   - Sent as an httpOnly, SameSite=Strict cookie named `rt`, with path=/api/v1/auth and Secure in production.
+   - POST /auth/refresh rotates the token. If a token that has already been replaced is presented, the whole family is revoked and the call returns 401 (reuse detection).
+   - POST /auth/logout revokes the current session and clears the cookie.
+   - The access token stays a 15-minute JWT, returned in the JSON body.
+6. Password reset:
+   - POST /auth/forgot-password always returns 200. It creates a token, stored as a SHA-256 hash in password_reset_tokens with a 30-minute expiry. In development the link is logged; delivery via the notification engine comes in Phase 9.
+   - POST /auth/reset-password consumes the token (single use), sets the new password and revokes all sessions.
+7. Password policy: minimum 10 characters; bcrypt with 12 rounds.
+8. Frontend:
+   - auth.store keeps the access token in memory only.
+   - On app start it calls /auth/refresh with credentials to restore the session.
+   - The api.js interceptor holds a single in-flight refresh promise and replays queued requests after it; if refresh fails, it logs out.
+   - Remove all token reads and writes to localStorage.
+9. Add a migration for the users columns failed_login_count, locked_until and last_login_at, and for any missing user_sessions columns.
+```
+
+### Prompt 3.5.3: Data Layer Safety
+
+```
+Fix the data layer (findings F2, F4, F5):
+
+1. config/database.js:
+   - Register pg type parsers: pgp.pg.types.setTypeParser(1700, parseFloat) and setTypeParser(20, v => parseInt(v, 10)).
+   - Export a `withTx(userId, fn)` helper. It runs db.tx, executes SET LOCAL app.user_id inside (used by the Phase 5 audit trigger; harmless now), and calls fn(t).
+2. BaseRepository:
+   - Constructor takes { table, columns, sortable, softDelete }.
+   - create/update filter the input to `columns`, and throw ValidationError if nothing is left.
+   - Build SQL with pgp.helpers.insert/update, or '$1:name' formatting for identifiers. No string interpolation of identifiers.
+   - findBy/count/exists filter keys against columns, plus id/created_at/deleted_at.
+   - paginate validates orderBy against `sortable` and direction against ASC/DESC; otherwise it throws ValidationError.
+   - Every method takes an optional last argument `t` (defaults to this.db).
+   - When softDelete is set, reads exclude deleted_at IS NOT NULL by default.
+3. Update every repository to declare columns and sortable.
+4. Add unit tests (tests/unit/repositories/base.repository.test.js) that try injection through keys and orderBy.
+```
+
+### Prompt 3.5.4: Errors, Deletes, Migrations, Cleanup
+
+```
+1. Errors (F9):
+   - Replace every `throw new Error(...)` in src/services with the typed errors in utils/errors.js (ValidationError 400, AuthenticationError 401, ForbiddenError 403, NotFoundError 404, ConflictError 409).
+   - Add a ESLint no-restricted-syntax rule for `ThrowStatement > NewExpression[callee.name='Error']`, scoped to src/services/**.
+   - error.middleware.js:
+     - remove the Mongoose branches
+     - map pg codes: 23505 → 409 "already exists", 23503 → 409 "record is in use" or 400 "referenced record not found", 23514 → 400, 22P02 → 400
+     - never leak the stack or internal message when NODE_ENV=production
+
+2. Deletes (F7, F8):
+   - Migration 013_restrict_history_fks.sql: for history tables (harvests, growth_observations, crop_input_applications, crop_pests_diseases, animal_* history tables, inventory_transactions, employee_attendance, employee_salaries, task_updates) change the FK to ON DELETE RESTRICT.
+   - Keep CASCADE only for true composition children (e.g. care plan tasks, checklist items).
+   - Add deleted_at where it is missing.
+   - Crop and animal services soft-delete. Deleting a parent that has active history → soft delete only.
+
+3. Migrations (F14):
+   - migrate.js creates schema_migrations(filename PK, checksum, applied_at).
+   - It runs each pending file in its own transaction, sorted by filename.
+   - It fails loudly if an applied file's checksum changed.
+   - `--baseline` flag: marks all existing files as applied without running them (for the current local DB).
+   - Remove the migrations mount from docker-compose's docker-entrypoint-initdb.d.
+
+4. Cleanup (F16, F21):
+   - Delete the Sakai demo routes and views (views/uikit, views/utilities, and demo pages except auth, notfound and access).
+   - Build AppMenu from the router: routes with meta.menu and meta.roles.
+   - Add a beforeEach guard enforcing meta.roles; unauthorised navigation goes to /access.
+   - Remove packages/shared from the workspaces, and delete the empty src/database/migrations and src/database/seeds folders.
+
+5. User management UI: views/users/UserList.vue and UserForm.vue (owner only).
+```
+
+### Prompt 3.5.5: Inventory Correctness Fixes
+
+```
+Fix inventory correctness on the parked Phase 4 branch after its rebase, or in 3.5 if the inventory code is merged first:
+
+1. recordTransaction:
+   - Runs in one tx.
+   - SELECT the item FOR UPDATE, compute the new stock numerically, and throw ConflictError on a negative result.
+   - Insert the ledger row, then update current_stock, all with `t`.
+2. FEFO deduction (useStockFromBatches):
+   - Same tx, and lock the candidate batches FOR UPDATE ORDER BY expiry_date NULLS LAST, received_date.
+   - Check the total available BEFORE mutating; if insufficient, throw ConflictError with nothing written.
+   - Write one ledger row per batch consumed.
+3. Add CHECK constraints: inventory_items.current_stock >= 0 and inventory_batches.quantity_remaining >= 0.
+4. Add a reconcile script (npm run inventory:reconcile) that compares current_stock with SUM(ledger) and reports drift.
+```
+
+### Phase 3.5 Tests
+
+```javascript
+// tests/integration/auth.test.js
+describe("Auth API (hardened)", () => {
+  describe("POST /auth/bootstrap", () => {
+    it("creates the first owner when no users exist");
+    it("returns 409 when any user exists");
+  });
+  describe("public registration", () => {
+    it("POST /auth/register returns 404");
+  });
+  describe("POST /users", () => {
+    it("owner can create a manager or worker");
+    it("manager gets 403");
+    it("worker gets 403");
+  });
+  describe("POST /auth/login", () => {
+    it("returns access token in body and sets httpOnly rt cookie");
+    it("returns 401 for wrong password without revealing which field was wrong");
+    it("returns 429 after 5 failed attempts for the same email+IP");
+    it("locks the account after 10 consecutive failures");
+  });
+  describe("POST /auth/refresh", () => {
+    it("rotates the refresh cookie and returns a new access token");
+    it("reusing a rotated token returns 401 and revokes the whole family");
+    it("returns 401 after logout");
+  });
+  describe("PUT /auth/me", () => {
+    it("updates first_name, last_name, phone");
+    it("ignores role, id, password_hash, is_active in the payload");
+  });
+  describe("password reset", () => {
+    it("forgot-password always returns 200 (no user enumeration)");
+    it("reset-password works once, then the token is rejected");
+    it("expired token (31 min) is rejected");
+    it("reset revokes all existing sessions");
+  });
+});
+
+// tests/unit/repositories/base.repository.test.js
+describe("BaseRepository", () => {
+  it("drops keys not in the columns whitelist on create/update");
+  it("throws ValidationError when no writable columns remain");
+  it('does not execute an injected identifier key like `name" = 1; --`');
+  it("rejects orderBy not in sortable with ValidationError");
+  it("rejects direction other than ASC/DESC");
+  it("uses the provided transaction context t");
+  it("excludes soft-deleted rows by default");
+});
+
+// tests/unit/config/type-parsers.test.js
+describe("pg type parsers", () => {
+  it("returns NUMERIC columns as JS numbers");
+  it("returns COUNT(*) as a JS number");
+});
+
+// tests/integration/inventory.transactions.test.js
+describe("Inventory transactions (correctness)", () => {
+  it("purchase then usage leaves exact decimal stock (e.g. 10.5 - 0.25 = 10.25)");
+  it("usage beyond stock returns 409 and writes nothing");
+  it("10 concurrent usages of 1 against stock 5 → 5 succeed, 5 fail, stock = 0");
+  it("FEFO consumes earliest-expiry batch first, across multiple batches");
+  it("FEFO insufficient stock leaves every batch unchanged (rollback)");
+  it("current_stock equals SUM(ledger) after a mixed sequence");
+});
+
+// tests/integration/errors.test.js
+describe("Error mapping", () => {
+  it("unknown id → 404 with typed error body");
+  it("duplicate unique value → 409");
+  it("deleting a referenced record → 409 'in use'");
+  it("malformed UUID/int → 400");
+  it("production mode hides internal messages on 500");
+});
+
+// tests/integration/soft-delete.test.js
+describe("Soft deletes", () => {
+  it("deleting a crop batch with harvests soft-deletes it and keeps harvest rows");
+  it("soft-deleted records are excluded from list endpoints");
+  it("hard DELETE of an inventory item with ledger rows is blocked (RESTRICT)");
+});
+
+// tests/unit/database/migrate.test.js
+describe("Migration runner", () => {
+  it("applies pending files once and records checksum");
+  it("second run applies nothing");
+  it("fails when an applied file's checksum changes");
+  it("rolls back a failing migration file entirely");
+});
+
+// frontend: tests/unit/stores/auth.store.test.js, services/api.test.js, router/guard.test.js
+describe("auth store", () => {
+  it("never writes tokens to localStorage");
+  it("restores session via /auth/refresh on init");
+});
+describe("api interceptor", () => {
+  it("performs a single refresh for concurrent 401s and replays all requests");
+  it("logs out when refresh fails");
+});
+describe("router guard", () => {
+  it("redirects unauthenticated users to /auth/login");
+  it("redirects a worker away from an owner-only route to /access");
+  it("menu omits routes the role cannot access");
+});
+```
+
+---
+
+## Phase 4: Inventory Completion & Integration
 
 ### Git Workflow for Phase 4
 
 ```bash
-git checkout develop && git pull
-git checkout -b feature/phase-4-inventory
+git checkout feature/phase-4-inventory
+git rebase develop            # develop now contains Phase 3.5
+# resolve conflicts, bring code onto the 3.5 patterns, then continue
 ```
 
-### Prompt 4.1: Inventory Backend
+### Prompt 4.1: Inventory Backend Completion
 
 ```
-Implement inventory management backend:
+Complete the inventory backend on top of the Phase 3.5 patterns:
 
-1. Inventory Categories:
-   - CRUD endpoints
-   - Seed: Seeds, Feed, Fertilizer, Pesticide, Medicine, Equipment, Supplies
-
-2. Inventory Items:
-   - Full CRUD with item_code generation
-   - Fields: name, category_id, unit, current_stock, minimum_stock,
-     cost_per_unit, supplier, location, expiry_date, notes
-   - Filter by category, low-stock, expiry
-
-3. Inventory Transactions:
-   - POST /api/v1/inventory/transactions
-   - GET /api/v1/inventory/items/:id/transactions
-
-   Types: purchase, usage, adjustment, return, expired, transfer
-   Fields: item_id, transaction_type, quantity, unit_cost,
-   reference_type (crop_batch/animal/etc), reference_id, notes
-
-4. Stock Management:
-   - GET /api/v1/inventory/low-stock
-   - GET /api/v1/inventory/expiring (items expiring within 30 days)
-   - Automatic stock level updates on transactions
-
-5. Services:
-   - createItem(data)
-   - recordTransaction(data) - update stock levels
-   - getLowStockItems()
-   - getExpiringItems(days)
-   - getUsageReport(itemId, dateRange)
+1. Bring the existing inventory repositories and service onto the standard patterns: columns/sortable whitelists, `t` param, typed errors, numeric types.
+2. Suppliers:
+   - Migration: suppliers(name, phone, email, kra_pin, notes, is_active, deleted_at).
+   - inventory_items.default_supplier_id.
+   - Purchases capture supplier_id, unit_cost, batch_number and expiry_date, and create an inventory_batch.
+3. Items gain:
+   - active_ingredient
+   - pre_harvest_interval_days
+   - milk_withdrawal_days, meat_withdrawal_days, egg_withdrawal_days
+   - reorder_quantity
+4. Reports:
+   - GET /inventory/valuation: SUM(batch.quantity_remaining × batch.unit_cost) per item and category.
+   - GET /inventory/reorder: items with current_stock <= minimum_stock, suggested qty = reorder_quantity.
+   - GET /inventory/expiring?days=30: batches.
+5. Unit conversion: helper convertToBase(qty, unitId, itemBaseUnitId) using units_of_measure factors. Throws ValidationError for incompatible dimensions (mass vs volume).
 ```
 
-### Prompt 4.2: Inventory Frontend
+### Prompt 4.2: Consumption Integration + PHI/Withdrawal
 
 ```
-Create inventory management frontend:
+Link consumption to inventory and enforce safety intervals. Each operation runs in ONE transaction:
 
-1. Inventory Dashboard (src/views/inventory/InventoryDashboard.vue):
-   - Total items, low stock alerts, expiring soon
-   - Stock value summary
-   - Recent transactions
+1. Crop input application (POST /crop-batches/:id/input-applications):
+   - Accepts inventory_item_id, quantity and unit_id. product_name stays as the fallback when there is no item.
+   - Converts to the base unit, deducts FEFO via the inventory service with `t`, and stores inventory_transaction_id, quantity_base_unit, unit_cost (weighted over the batches consumed) and total_cost.
+   - Sets application.phi_days from the item and safe_harvest_date = application_date + phi_days.
+   - Sets crop_batches.safe_harvest_date = MAX over the batch's non-deleted applications.
+2. Feed records: same deduction and costing; for group feeding, one ledger row per batch consumed.
+3. Treatments:
+   - New child table treatment_medications(treatment_id, inventory_item_id, dose, unit_id, route, inventory_transaction_id, milk/meat/egg_withdrawal_until).
+   - POST /diseases-treatments accepts medications[].
+   - Sets animals.* or animal_groups.*_withdrawal_until = GREATEST(existing, new).
+4. Enforcement:
+   - Harvest creation while crop_batches.safe_harvest_date > harvest_date → ConflictError (409) code PHI_ACTIVE, with the safe date in details.
+   - Milk, egg or meat production (or death/slaughter with sale) during withdrawal → 409 WITHDRAWAL_ACTIVE.
+   - Owner may pass override_reason. It is stored on the record (override_by, override_reason) and logged at warn level.
+5. GET /withdrawals/active lists animals, groups and crop batches currently restricted, with their until dates.
+6. Refactor: extract animal-feed.service.js and animal-health.service.js out of animal.service.js; the routes stay unchanged.
+```
 
-2. Item List (src/views/inventory/ItemList.vue):
-   - DataTable with category filter
-   - Stock level indicators (color coded)
-   - Low stock warning badges
-   - Search by name or code
+### Prompt 4.3: Inventory Frontend
 
-3. Item Form (src/views/inventory/ItemForm.vue):
-   - Category dropdown
-   - Item details
-   - Stock levels (current, minimum)
-   - Supplier info
-   - Expiry date (optional)
-
-4. Item Detail (src/views/inventory/ItemDetail.vue):
-   - Item info
-   - Stock level chart over time
-   - Transaction history
-   - Usage by department/enterprise
-
-5. Transaction Form (component):
-   - Item selection with current stock display
-   - Transaction type
-   - Quantity with validation (not exceeding stock for usage)
-   - Reference linking (batch, animal, etc.)
-
-6. Low Stock Alerts (component):
-   - List items below minimum
-   - Quick reorder action
-   - Notification badge in sidebar
+```
+1. Adopt composables/useLazyTable.js (DataTable lazy mode → page, limit, sort, filters) for the item, batch and transaction lists.
+2. Supplier list and form. The purchase form has supplier, batch number, expiry and unit cost.
+3. Inventory dashboard: valuation total, reorder list, expiring batches, recent transactions.
+4. InventoryItemPicker.vue:
+   - AutoComplete over items, showing stock on hand + base unit and PHI/withdrawal days.
+   - Allows a "not in inventory" free-text fallback.
+   - Used in the crop input application, feed and treatment forms.
+5. Treatment form: repeatable medications rows.
+6. Withdrawal badges on the crop batch, animal and group detail pages ("PHI until 12 Oct", "Milk withdrawal until …"). WithdrawalBoard.vue at /withdrawals.
+7. The harvest and production forms show a blocking dialog when the API returns PHI_ACTIVE/WITHDRAWAL_ACTIVE. Owners get an override reason field.
 ```
 
 ### Phase 4 Tests
 
 ```javascript
-// tests/unit/services/inventory.service.test.js
-describe("InventoryService", () => {
-  describe("createItem", () => {
-    it("should create item with generated code");
-    it("should set initial stock to 0");
-    it("should validate category exists");
-  });
-
-  describe("recordTransaction", () => {
-    it("should increase stock for purchase");
-    it("should decrease stock for usage");
-    it("should not allow negative stock");
-    it("should update item current_stock");
-    it("should link to reference if provided");
-  });
-
-  describe("getLowStockItems", () => {
-    it("should return items where current_stock < minimum_stock");
-    it("should include category info");
-  });
-
-  describe("getExpiringItems", () => {
-    it("should return items expiring within specified days");
-    it("should order by expiry date ascending");
-  });
-});
-
 // tests/integration/inventory.test.js
 describe("Inventory API", () => {
-  describe("POST /api/v1/inventory/items", () => {
-    it("should create item");
-    it("should generate unique item_code");
-  });
+  it("purchase with supplier creates batch and increases stock");
+  it("valuation equals sum of remaining batch qty × cost");
+  it("reorder list returns items at/below minimum with reorder_quantity");
+  it("expiring returns batches within N days ordered by expiry");
+  it("worker cannot create items (403)");
+});
 
-  describe("POST /api/v1/inventory/transactions", () => {
-    it("should record transaction and update stock");
-    it("should return 400 for insufficient stock");
-  });
+// tests/unit/utils/units.test.js
+describe("convertToBase", () => {
+  it("converts ml → l and g → kg");
+  it("rejects mass → volume conversion");
+});
 
-  describe("GET /api/v1/inventory/low-stock", () => {
-    it("should return low stock items");
-  });
+// tests/integration/consumption.test.js
+describe("Consumption integration", () => {
+  it("crop input application deducts stock FEFO and stores cost");
+  it("application sets batch safe_harvest_date from item PHI");
+  it("second application with longer PHI extends safe_harvest_date");
+  it("insufficient stock → 409 and no application row written (rollback)");
+  it("free-text product (no item) records application without stock change");
+  it("feed record for a group deducts stock and stores cost");
+  it("treatment with 2 medications writes 2 ledger rows and sets withdrawal dates");
+});
+
+describe("PHI / withdrawal enforcement", () => {
+  it("harvest before safe_harvest_date → 409 PHI_ACTIVE");
+  it("harvest on/after safe_harvest_date → 201");
+  it("milk production during milk withdrawal → 409 WITHDRAWAL_ACTIVE");
+  it("owner override with reason → 201 and override recorded");
+  it("manager override attempt → 403");
+  it("GET /withdrawals/active lists restricted subjects");
+});
+
+// frontend
+describe("InventoryItemPicker", () => {
+  it("shows stock and unit for each option");
+  it("emits free-text value when fallback chosen");
+});
+describe("HarvestForm", () => {
+  it("shows PHI dialog on 409 PHI_ACTIVE");
 });
 ```
 
 ---
 
-## Phase 5: Financial Management
+## Phase 5: Activity Model & Platform Foundations
 
 ### Git Workflow for Phase 5
 
 ```bash
 git checkout develop && git pull
-git checkout -b feature/phase-5-financial
+git checkout -b feature/phase-5-activity-platform
 ```
 
-### Prompt 5.1: Financial Backend
+### Prompt 5.1: ADR + Activities
 
 ```
-Implement financial management backend:
+1. Write docs/adr/001-activity-model.md. Cover the context (fragmented detail tables, and costing needs), the decision (an activities header table plus detail tables), the alternatives considered, and the consequences.
+2. Migration:
+   - activities(id, activity_type, status planned|done|cancelled, planned_for, occurred_at, enterprise_id, location_id, crop_batch_id, animal_id, animal_group_id, performed_by → employees, labour_hours NUMERIC(6,2), input_cost NUMERIC(14,2), other_cost NUMERIC(14,2), task_id, client_request_id UNIQUE, notes, created_by, created_at, updated_at, deleted_at)
+   - CHECK that at most one subject is set.
+   - Add activity_id to the detail tables listed in IMPLEMENTATION_PLAN.md.
+3. activity.service.js:
+   - record(t, {...}) is called by every detail-writing service in the same tx.
+   - Input cost comes from the Phase 4 costing.
+4. Backfill script (npm run backfill:activities): creates done activities for existing detail rows; idempotent.
+5. GET /activities: paginated, with filters enterprise_id, type, subject, from/to, performed_by, status.
+6. POST /activities/bulk:
+   - Accepts up to 100 items, each with client_request_id.
+   - Items already processed return their existing id.
+   - Returns per-item results; partial success is allowed, and each item runs in its own tx.
+```
 
+### Prompt 5.2: Enterprises, Audit, Attachments, Settings, Consolidation
+
+```
 1. Enterprises:
-   - CRUD for profit centers
-   - Seed: Tomato Production, Egg Production, Milk Production, Honey, etc.
-
-2. Transaction Categories:
-   - CRUD with type (income/expense)
-   - Seed: Sales, Wages, Feed Costs, Fertilizer, Medicine, Equipment, etc.
-
-3. Financial Transactions:
-   - Full CRUD
-   - Fields: transaction_date, type (income/expense), category_id,
-     enterprise_id, amount, payment_method, reference_number,
-     description, receipt_url, recorded_by
-   - Filter by: date range, type, enterprise, category
-
-4. Sales:
-   - Full CRUD
-   - Fields: sale_date, enterprise_id, item_description, quantity,
-     unit_price, total_amount, customer_name, customer_phone,
-     payment_status (paid/partial/pending), payment_method, notes
-   - Auto-create income transaction on sale
-
-5. Reports:
-   - GET /api/v1/financial/summary?start_date&end_date
-   - GET /api/v1/financial/profit-loss?enterprise_id&period
-   - GET /api/v1/financial/cash-flow?period
-   - GET /api/v1/enterprises/:id/performance
-
-6. Services:
-   - recordTransaction(data)
-   - recordSale(data) - create sale + transaction
-   - getFinancialSummary(dateRange)
-   - getProfitLossByEnterprise(enterpriseId, period)
-   - getCashFlow(period)
-```
-
-### Prompt 5.2: Financial Frontend
-
-```
-Create financial management frontend:
-
-1. Financial Dashboard (src/views/financial/FinancialDashboard.vue):
-   - KPIs: Total income, expenses, net profit
-   - Income vs expense chart (monthly)
-   - Top performing enterprises
-   - Recent transactions
-
-2. Transaction List (src/views/financial/TransactionList.vue):
-   - DataTable with filters
-   - Income/expense toggle
-   - Date range picker
-   - Export to CSV
-
-3. Transaction Form (src/views/financial/TransactionForm.vue):
-   - Type selection (income/expense)
-   - Category dropdown
-   - Enterprise linking
-   - Amount with currency
-   - Payment method
-   - Receipt upload
-
-4. Sales Management (src/views/financial/SalesList.vue):
-   - Sales records table
-   - Payment status badges
-   - Quick record payment action
-   - Customer search
-
-5. Sales Form (src/views/financial/SalesForm.vue):
-   - Enterprise selection
-   - Item details
-   - Quantity and pricing
-   - Customer info
-   - Payment status
-
-6. Reports (src/views/financial/Reports.vue):
-   - Profit/Loss report with date range
-   - Enterprise comparison chart
-   - Cash flow visualization
-   - Print/export options
-
-Use Chart.js for visualizations. Include date range selectors.
+   - CRUD. Add enterprise_type and unit_of_output.
+   - Add enterprise_id to crop_batches, animal_groups and animals, with a backfill based on type.
+   - Seed: Tomatoes, Capsicum, Strawberries, Button Mushrooms, Oyster Mushrooms, Dairy Cattle, Dairy Goats, Dorper Sheep, Kienyeji Poultry, Apiary.
+2. Audit log:
+   - audit_log table, plus a trigger function audit_row() that reads current_setting('app.user_id', true).
+   - Attach it to business tables via a migration loop.
+   - withTx sets app.user_id.
+   - GET /audit-log?table&record_id is owner-only.
+3. Attachments:
+   - Upload with multer to UPLOAD_DIR. Store under a random key; whitelist image/jpeg, image/png, image/webp and application/pdf; limit 10 MB.
+   - StorageAdapter interface { put, get, delete } with a LocalDiskStorage implementation.
+   - Access-checked download endpoint.
+4. Settings: farm_settings(key, value jsonb, effective_from). settings.service get(key, date) returns the effective value. Seed currency, timezone and farm coordinates.
+5. Consolidation:
+   - Migrate production_records rows into animal_production_records, then drop production_records.
+   - Care plans: remove the deactivate-others behaviour so an animal can have multiple active plans (F20).
+6. OpenAPI:
+   - packages/backend/openapi/openapi.yaml covering auth, users, inventory, activities, enterprises and settings.
+   - Serve /api/v1/docs in non-production.
+   - CI step: npx @redocly/cli lint.
+7. Frontend:
+   - FarmTimeline.vue (/timeline), and a Timeline tab on batch, animal and group detail.
+   - AttachmentUploader.vue (gallery and upload).
+   - SettingsView.vue and EnterpriseList.vue.
+   - AuditLogView (owner).
 ```
 
 ### Phase 5 Tests
 
 ```javascript
-// tests/unit/services/financial.service.test.js
-describe("FinancialService", () => {
-  describe("recordTransaction", () => {
-    it("should create transaction");
-    it("should validate category matches type");
-    it("should validate enterprise exists");
-  });
-
-  describe("recordSale", () => {
-    it("should create sale record");
-    it("should auto-create income transaction");
-    it("should calculate total_amount");
-  });
-
-  describe("getFinancialSummary", () => {
-    it("should return totals for date range");
-    it("should calculate net profit");
-    it("should group by category");
-  });
-
-  describe("getProfitLossByEnterprise", () => {
-    it("should return income and expenses");
-    it("should calculate profit margin");
-  });
+describe("Activities", () => {
+  it("creating a crop input application also creates a done activity in the same tx");
+  it("failure in detail insert rolls back the activity");
+  it("GET /activities filters by enterprise, type and date range");
+  it("bulk: duplicate client_request_id returns the original id, no duplicate row");
+  it("bulk: one invalid item does not block the others");
+  it("backfill is idempotent");
+});
+describe("Audit log", () => {
+  it("update of an animal writes before/after JSON with changed_by");
+  it("only owner can read audit log");
+});
+describe("Attachments", () => {
+  it("rejects disallowed MIME types and files > 10MB");
+  it("download requires auth");
+});
+describe("Settings", () => {
+  it("returns the value effective on a given date");
+});
+describe("Care plans", () => {
+  it("an animal can have two active plans simultaneously");
+});
+describe("OpenAPI", () => {
+  it("spec lints cleanly (CI)");
 });
 ```
 
 ---
 
-## Phase 6: Employee Management
+## Phase 6: Finance & Enterprise Costing
 
 ### Git Workflow for Phase 6
 
 ```bash
 git checkout develop && git pull
-git checkout -b feature/phase-6-employee
+git checkout -b feature/phase-6-finance
 ```
 
-### Prompt 6.1: Employee Backend
+### Prompt 6.1: Ledger, Sales, Receivables
 
 ```
-Implement employee management backend:
-
-1. Employees:
-   - Full CRUD with employee_code generation
-   - Fields per implementation plan
-   - Employment types: permanent, casual, seasonal
-   - Salary types: monthly, daily, hourly
-   - Status: active, on_leave, terminated
-   - Link to users table for system access
-
-2. Attendance:
-   - POST /api/v1/employees/:id/attendance (clock in/out)
-   - GET /api/v1/employees/:id/attendance
-   - PUT /api/v1/attendance/:id
-   - Auto-calculate hours_worked
-   - Status: present, absent, late, half_day
-
-3. Salary Processing:
-   - POST /api/v1/employee-salaries
-   - GET /api/v1/employees/:id/salaries
-   - GET /api/v1/employee-salaries (list all)
-   - Calculate: basic_pay based on attendance and salary_type
-   - Handle allowances and deductions
-   - Payment status: pending, paid
-
-4. Leave Management:
-   - POST /api/v1/employee-leaves
-   - GET /api/v1/employees/:id/leaves
-   - PUT /api/v1/employee-leaves/:id (approve/reject)
-   - Types: annual, sick, unpaid
-   - Auto-calculate days_count
-   - Status: pending, approved, rejected
-
-5. Services:
-   - registerEmployee(data)
-   - clockIn(employeeId)
-   - clockOut(employeeId)
-   - calculateSalary(employeeId, period)
-   - processSalaryPayment(salaryId, paymentData)
-   - submitLeaveRequest(employeeId, data)
-   - approveLeave(leaveId, approverId)
+1. Transaction categories (income/expense, seeded) and financial_transactions:
+   - Adds enterprise_id, source_type/source_id (UNIQUE when set), payment_method (cash|mpesa|bank|cheque), mpesa_ref and attachment_id.
+   - Money is NUMERIC(14,2).
+2. Auto-posting (idempotent via the source_type/source_id unique):
+   - An inventory purchase posts an expense.
+   - Issuing a sale posts income.
+   - Payroll (Phase 7) will post wages.
+3. customers:
+   - Fields: name, type, phone, email, kra_pin, credit_limit, payment_terms_days, deleted_at.
+4. sales and sale_lines:
+   - sales header: customer_id, invoice_no (sequence INV-YYYY-#####), sale_date, due_date, status draft|issued|part_paid|paid|void, totals.
+   - sale_lines: enterprise_id, description, qty, unit, unit_price, line_total, source_type/source_id linking to a harvest, production record or (later) honey harvest or flush.
+5. payments and payment_allocations. Allocation never exceeds the outstanding balance, and the sale status updates in the same tx.
+6. GET /receivables/aging (buckets 0-30, 31-60, 61-90, 90+) and GET /customers/:id/statement.
+7. Invoice PDF via pdfkit: farm details from settings, lines, totals, payment instructions (M-Pesa paybill/till from settings).
 ```
 
-### Prompt 6.2: Employee Frontend
+### Prompt 6.2: Costing Engine & Reports
 
 ```
-Create employee management frontend:
-
-1. Employee Dashboard (src/views/employees/EmployeeDashboard.vue):
-   - Total employees by status
-   - Today's attendance summary
-   - Pending leave requests
-   - Upcoming salary payments
-
-2. Employee List (src/views/employees/EmployeeList.vue):
-   - DataTable with filters (department, status, type)
-   - Quick view panel
-   - Status badges
-
-3. Employee Form (src/views/employees/EmployeeForm.vue):
-   - Personal info section
-   - Employment details section
-   - Bank details section
-   - Emergency contact section
-   - System access checkbox (creates user)
-
-4. Employee Profile (src/views/employees/EmployeeProfile.vue):
-   - Profile info with photo
-   - Tabs: Attendance, Salary, Leave, Tasks
-   - Employment history
-   - Performance summary
-
-5. Attendance Management (src/views/employees/Attendance.vue):
-   - Calendar view with attendance status
-   - Clock in/out buttons
-   - Monthly summary table
-   - Edit attendance dialog
-
-6. Salary Processing (src/views/employees/Salary.vue):
-   - Generate salary for period
-   - Review and adjust (allowances, deductions)
-   - Bulk payment processing
-   - Payment history
-
-7. Leave Management (src/views/employees/Leave.vue):
-   - Request form
-   - Manager approval queue
-   - Leave balance display
-   - Calendar with leave periods
+1. cost_allocations(overhead category → enterprise, method fixed_pct|area|headcount|labour_hours, value, effective_from).
+2. costing.service.js:
+   - Direct inputs = SUM(activities.input_cost) by enterprise and period.
+   - Direct labour = SUM(labour_hours × employee hourly rate), or wages already posted by enterprise.
+   - Direct expenses = financial_transactions with an enterprise_id.
+   - Overheads are allocated by rule.
+   - Output = harvest and production quantities in the enterprise's unit_of_output.
+   - Cost per unit = total cost / output.
+   - Gross margin = revenue − direct costs.
+   - Batch costing = the same calculation scoped to a crop batch or animal group.
+3. Reports: profit-loss (by enterprise and consolidated), cost-of-production, batch-costing and cash-flow (cash methods only; excludes non-cash inventory usage).
+4. Frontend:
+   - Transactions, Customers, Sales (issue, void, record payment), Receivables.
+   - Reports with date-range pickers, charts and CSV export.
 ```
 
 ### Phase 6 Tests
 
 ```javascript
-// tests/unit/services/employee.service.test.js
-describe("EmployeeService", () => {
-  describe("registerEmployee", () => {
-    it("should create employee with generated code");
-    it("should create user if system access requested");
-    it("should validate unique id_number");
-  });
-
-  describe("clockIn", () => {
-    it("should create attendance record");
-    it("should not allow double clock in");
-    it("should set late status if after 9am");
-  });
-
-  describe("clockOut", () => {
-    it("should update attendance record");
-    it("should calculate hours_worked");
-    it("should throw error if not clocked in");
-  });
-
-  describe("calculateSalary", () => {
-    it("should calculate based on monthly salary");
-    it("should calculate based on daily rate and days worked");
-    it("should calculate based on hourly rate and hours worked");
-    it("should apply deductions for unpaid leave");
-  });
-
-  describe("submitLeaveRequest", () => {
-    it("should create leave request");
-    it("should validate date range");
-    it("should calculate days_count");
-  });
-
-  describe("approveLeave", () => {
-    it("should update status to approved");
-    it("should set approver and approval date");
-    it("should create attendance records for leave period");
-  });
+describe("Finance", () => {
+  it("auto-posting the same source twice creates one transaction");
+  it("issuing a sale assigns sequential invoice_no and posts income");
+  it("payment allocation exceeding balance → 400");
+  it("partial payment sets status part_paid; full sets paid");
+  it("voiding a paid sale → 409");
+  it("aging buckets place a 31-day-old invoice in 31-60");
+  it("worker cannot access finance endpoints (403)");
+});
+describe("Costing (fixture with known answers)", () => {
+  it("cost per kg for a tomato batch = (inputs + labour + direct) / kg harvested");
+  it("overhead allocated 60/40 by fixed_pct lands on the right enterprises");
+  it("cash flow excludes non-cash inventory usage");
 });
 ```
 
 ---
 
-## Phase 7: Task Management
+## Phase 7: Workforce: Tasks, Employees & Payroll
 
 ### Git Workflow for Phase 7
 
 ```bash
 git checkout develop && git pull
-git checkout -b feature/phase-7-task-management
+git checkout -b feature/phase-7-workforce
 ```
 
-### Prompt 7.1: Task Backend
+### Prompt 7.1: Employees, Attendance, Leave
 
 ```
-Implement task management backend:
-
-1. Task Categories:
-   - CRUD endpoints
-   - Seed: Planting, Harvesting, Feeding, Milking, Cleaning,
-     Maintenance, Treatment, Administrative
-
-2. Tasks:
-   - Full CRUD with task_code generation
-   - Fields per implementation plan
-   - Priority: low, medium, high, urgent
-   - Status: pending, in_progress, completed, cancelled
-   - Link to location and enterprise
-
-3. Task Assignments:
-   - POST /api/v1/tasks/:id/assign
-   - DELETE /api/v1/task-assignments/:id
-   - GET /api/v1/employees/:id/tasks
-   - Roles: assignee, supervisor
-
-4. Task Updates:
-   - POST /api/v1/tasks/:id/updates
-   - GET /api/v1/tasks/:id/updates
-   - Progress tracking with percentage
-   - Hours worked logging
-
-5. Task Checklist:
-   - POST /api/v1/tasks/:id/checklist
-   - PUT /api/v1/checklist-items/:id
-   - Toggle completion
-
-6. Views & Queries:
-   - GET /api/v1/tasks/calendar?start&end
-   - GET /api/v1/tasks/overdue
-   - GET /api/v1/tasks/my-tasks (current user)
-
-7. Services:
-   - createTask(data)
-   - assignTask(taskId, employeeId, role)
-   - updateTaskProgress(taskId, progressData)
-   - completeTask(taskId)
-   - getTasksForCalendar(dateRange)
-   - getOverdueTasks()
+1. Employees:
+   - CRUD. Adds kra_pin, nssf_no, shif_no, mpesa_phone, pay_frequency, daily_rate / monthly_salary, and an optional user_id link.
+   - Soft delete. Statutory numbers are visible to owners only.
+2. Attendance:
+   - Clock in/out.
+   - POST /attendance/roll-call: bulk for a date.
+   - Unique (employee_id, date).
+3. Leave: request → approve/reject (manager/owner), with balances per leave type per year.
+4. casual_work_logs: date, worker name/phone or employee_id, activity/task, units, rate, amount, paid_via, mpesa_ref. Weekly payout summary.
 ```
 
-### Prompt 7.2: Task Frontend
+### Prompt 7.2: Payroll (Kenya)
 
 ```
-Create task management frontend:
+1. Statutory rate tables in farm_settings with effective_from, never hard-coded:
+   - PAYE bands and personal relief
+   - SHIF rate and minimum
+   - NSSF Tier I/II limits and rates
+   - Affordable Housing Levy rate
+   - Also: the order in which deductions reduce taxable pay, per current KRA guidance.
+   Seed them with the rates in force when this phase is implemented, verified against KRA, SHA and NSSF official publications. Record each source URL in the settings row.
+2. payroll.service.js:
+   - generate(period) → draft payroll_run with a payslip per employee (gross from salary, or daily_rate × days attended; plus allowances).
+   - Computes each statutory deduction and net pay.
+   - approve → posts wages by enterprise (labour hours split from activities, else default enterprise).
+   - mark-paid → mpesa refs.
+3. Payslip PDF.
+4. Frontend: Payroll run wizard (draft → review → approve → pay) and payslip view.
+```
 
-1. Task Dashboard (src/views/tasks/TaskDashboard.vue):
-   - KPIs: pending, in progress, overdue, completed today
-   - My tasks widget
-   - Overdue alerts
-   - Quick add task
+### Prompt 7.3: Tasks + Worker Quick-Log
 
-2. Task List (src/views/tasks/TaskList.vue):
-   - DataTable with rich filters
-   - Priority badges with colors
-   - Status column with dropdown update
-   - Assignee avatars
-   - Due date highlighting (overdue in red)
-
-3. Task Form (src/views/tasks/TaskForm.vue):
-   - Title and description
-   - Category and priority
-   - Due date and start date
-   - Location and enterprise linking
-   - Initial checklist items
-   - Estimated hours
-
-4. Task Detail (src/views/tasks/TaskDetail.vue):
-   - Task header with status and priority
-   - Description panel
-   - Assignees section with add/remove
-   - Checklist with progress bar
-   - Updates timeline
-   - Action buttons (start, complete, cancel)
-
-5. Task Calendar (src/views/tasks/TaskCalendar.vue):
-   - FullCalendar or PrimeVue Schedule
-   - Color by priority
-   - Click to view/edit
-   - Drag to reschedule
-
-6. My Tasks (src/views/tasks/MyTasks.vue):
-   - Employee's assigned tasks
-   - Filter by status
-   - Quick update progress
-   - Clock hours worked
-
-7. Components:
-   - TaskAssignDialog
-   - TaskUpdateForm
-   - ChecklistItem (with completion toggle)
+```
+1. Tasks:
+   - Adds enterprise_id, a subject (crop_batch/animal/group/location, and hive after Phase 8), recurrence_rule (RRULE subset: daily, weekly by day, every N days), source manual|care_plan, checklist and assignments.
+   - POST /tasks/:id/complete { labour_hours, notes, checklist } creates a done activity (or converts the task's planned activity to done).
+   - Care plans generate tasks with planned activities.
+   - GET /tasks/my, /tasks/calendar and /tasks/overdue.
+2. Worker scope: the worker role sees only tasks assigned to them and quick-log endpoints. It is denied finance, payroll and settings.
+3. Quick-log:
+   - views/quick-log/QuickLogHome.vue (mobile-first large buttons): Log feeding, Log eggs, Log milk, Log spray, Record mortality, Complete my task.
+   - Each form pre-fills its subject.
+4. QR codes:
+   - Each location, animal house, pen and (Phase 8) hive gets qr_code (a short random slug).
+   - A printable labels page uses the qrcode library.
+   - /q/:code resolves via GET /quick-log/context?qr= and opens quick-log for that subject.
+5. Frontend: EmployeeList and Profile (tabs), RollCall, TaskBoard, TaskCalendar, TaskDetail.
 ```
 
 ### Phase 7 Tests
 
 ```javascript
-// tests/unit/services/task.service.test.js
-describe("TaskService", () => {
-  describe("createTask", () => {
-    it("should create task with generated code");
-    it("should validate category exists");
-    it("should set initial status to pending");
-  });
-
-  describe("assignTask", () => {
-    it("should create assignment");
-    it("should validate employee exists");
-    it("should not duplicate assignments");
-  });
-
-  describe("updateTaskProgress", () => {
-    it("should create update record");
-    it("should update task status");
-    it("should accumulate hours_worked");
-  });
-
-  describe("completeTask", () => {
-    it("should set status to completed");
-    it("should set completion_date");
-    it("should calculate actual_hours");
-  });
-
-  describe("getOverdueTasks", () => {
-    it("should return tasks past due_date");
-    it("should exclude completed tasks");
-    it("should order by due_date");
-  });
+describe("Payroll calculations (worked examples from current official guidance)", () => {
+  it("PAYE at each band edge");
+  it("SHIF with minimum contribution applied");
+  it("NSSF tier I and tier II caps");
+  it("Housing Levy");
+  it("uses the rate set effective for the payroll period, not today's");
+});
+describe("Payroll run", () => {
+  it("generate → approve posts wages once per enterprise split");
+  it("approving twice → 409");
+  it("casual logs for the period are included");
+});
+describe("Tasks", () => {
+  it("completing a task creates a done activity with labour hours");
+  it("recurring task generates next occurrence");
+  it("care plan applied to a batch generates tasks");
+  it("worker sees only own tasks; GET /tasks as worker is scoped");
+  it("worker cannot access /payroll-runs (403)");
+});
+describe("Quick-log", () => {
+  it("QR code resolves to subject and allowed actions");
+  it("unknown QR → 404");
 });
 ```
 
 ---
 
-## Phase 8: Dashboard & Analytics
+## Phase 8: Enterprise Depth: Beekeeping, Mushrooms, Greenhouse Environment
 
 ### Git Workflow for Phase 8
 
 ```bash
 git checkout develop && git pull
-git checkout -b feature/phase-8-dashboard
+git checkout -b feature/phase-8-enterprise-depth
 ```
 
-### Prompt 8.1: Analytics Backend
+### Prompt 8.1: Beekeeping
 
 ```
-Implement dashboard and analytics backend:
-
-1. Dashboard Summary:
-   - GET /api/v1/dashboard
-   - Returns: active crop batches, animals, low stock count,
-     pending tasks, today's production, week's revenue
-
-2. Crop Analytics:
-   - GET /api/v1/analytics/crops
-   - Yield trends by crop type
-   - Input costs per batch
-   - Pest/disease frequency
-   - Harvest comparisons
-
-3. Animal Analytics:
-   - GET /api/v1/analytics/animals
-   - Production trends (eggs, milk, honey)
-   - Feed consumption and costs
-   - Health incident rates
-   - Mortality rates
-
-4. Financial Analytics:
-   - GET /api/v1/analytics/financial
-   - Revenue trends
-   - Expense breakdown
-   - Enterprise profitability
-   - Cash flow projections
-
-5. Employee Analytics:
-   - GET /api/v1/analytics/employees
-   - Attendance rates
-   - Task completion rates
-   - Overtime analysis
-   - Payroll summaries
-
-6. Data Export:
-   - GET /api/v1/export/:module?format=csv
-   - Modules: crops, animals, inventory, financial, employees, tasks
-
-7. Services:
-   - getDashboardSummary()
-   - getCropAnalytics(dateRange)
-   - getAnimalAnalytics(dateRange)
-   - getFinancialAnalytics(dateRange)
-   - exportData(module, format, filters)
-
-Optimize queries with proper indexes and materialized views where needed.
+1. Tables:
+   - apiaries
+   - hives (hive_code, qr_code, hive_type Langstroth|KTBH|log, colony_source, established_on, status, enterprise_id)
+   - hive_inspections (queen_seen, eggs_seen, brood_pattern 1-5, temperament 1-5, population_frames, honey_stores, varroa_method, varroa_count, pests_seen text[], supers_added, supers_removed, actions, next_visit_on)
+   - honey_harvests (honey_kg, wax_kg, moisture_percent)
+   - hive_events (requeen, split, swarm_caught, feed, merge, absconded)
+2. Every record writes an activity (subject hive_id: add the hive_id column to activities).
+3. Migration: convert any animal_groups whose animal type is bees into hives.
+4. Alerts (consumed in Phase 9): queenless (no queen or eggs seen on 2 consecutive inspections), varroa above the threshold setting, next_visit_on overdue.
+5. Frontend:
+   - ApiaryList
+   - HiveDetail (inspections timeline, honey per season chart)
+   - HiveInspectionForm, mobile-first and linked from quick-log/QR
 ```
 
-### Prompt 8.2: Dashboard Frontend
+### Prompt 8.2: Mushrooms
 
 ```
-Create comprehensive dashboard frontend:
+1. Tables:
+   - mushroom_batches (species/strain, location_id, substrate_recipe, dry_substrate_kg, treatment_method, spawn_supplier, spawn_kg, bags_count, spawn_run_start, pinning_date, status, enterprise_id)
+   - mushroom_flushes (flush_no, harvest_date, fresh_kg, grade)
+   - mushroom_contaminations (contaminant, bags_discarded, action_taken)
+2. Computed: biological_efficiency_pct = SUM(fresh_kg) / dry_substrate_kg × 100, contamination_rate = bags_discarded / bags_count.
+3. Substrate and spawn consumption deducts inventory (Phase 4 integration); flushes write activities and can feed sale_lines.
+4. Frontend: MushroomBatchList, MushroomBatchDetail (stage stepper, flush table, BE gauge), FlushForm.
+```
 
-1. Main Dashboard (src/views/dashboard/Dashboard.vue):
-   - KPI cards row: revenue, expenses, profit, tasks completed
-   - Production summary cards (crops, animals)
-   - Charts: revenue trend, task completion, production
-   - Recent activity feed
-   - Quick action buttons
+### Prompt 8.3: Greenhouse Environment + Livestock KPI Data
 
-2. Crop Analytics (src/views/dashboard/CropAnalytics.vue):
-   - Yield comparison chart
-   - Input cost analysis
-   - Pest/disease heatmap by month
-   - Batch performance table
-   - Print report button
-
-3. Animal Analytics (src/views/dashboard/AnimalAnalytics.vue):
-   - Production charts by type
-   - Feed cost trends
-   - Health metrics
-   - Group performance comparison
-
-4. Financial Analytics (src/views/dashboard/FinancialAnalytics.vue):
-   - Revenue vs expenses line chart
-   - Expense breakdown pie chart
-   - Enterprise comparison bar chart
-   - Monthly profit trend
-   - Cash flow statement
-
-5. Employee Analytics (src/views/dashboard/EmployeeAnalytics.vue):
-   - Attendance chart
-   - Task completion by employee
-   - Payroll summary
-   - Leave utilization
-
-6. Report Generator (src/views/reports/ReportGenerator.vue):
-   - Module selection
-   - Date range picker
-   - Filter options
-   - Preview and export (PDF, CSV)
-
-Use Chart.js with vue-chartjs. Include date range selectors.
-Add print-friendly CSS for reports.
+```
+1. environment_logs(location_id, logged_at, temp_min_c, temp_max_c, rh_percent, soil_moisture, ec, ph, source manual|sensor, recorded_by).
+   - POST /environment-logs/ingest authenticates with a hashed per-device API key (devices table).
+2. Charts per greenhouse; out-of-range warnings based on per-crop ranges in settings.
+3. Poultry daily flock sheet (eggs, mortality, feed kg): a single form writing production, death and feed records.
+4. Dairy: lactation number, calving date, dry-off date on animals; needed for the Phase 9 KPIs.
 ```
 
 ### Phase 8 Tests
 
 ```javascript
-// tests/unit/services/analytics.service.test.js
-describe("AnalyticsService", () => {
-  describe("getDashboardSummary", () => {
-    it("should return all summary metrics");
-    it("should calculate correct totals");
-    it("should handle empty data gracefully");
-  });
-
-  describe("getCropAnalytics", () => {
-    it("should return yield data by crop type");
-    it("should filter by date range");
-    it("should include input cost analysis");
-  });
-
-  describe("getFinancialAnalytics", () => {
-    it("should calculate revenue trends");
-    it("should group expenses by category");
-    it("should calculate profit margins");
-  });
-
-  describe("exportData", () => {
-    it("should generate CSV format");
-    it("should apply filters correctly");
-    it("should handle large datasets");
-  });
+describe("Beekeeping", () => {
+  it("inspection creates an activity with hive subject");
+  it("two consecutive inspections without queen/eggs raises queenless alert");
+  it("honey per hive per season aggregates harvests");
+  it("bee animal_groups migrate to hives without data loss");
+});
+describe("Mushrooms", () => {
+  it("BE% = total fresh kg / dry substrate kg × 100");
+  it("contamination rate computed from discarded bags");
+  it("spawn usage deducts inventory");
+});
+describe("Environment logs", () => {
+  it("ingest rejects invalid API key");
+  it("ingest accepts valid key and stores source=sensor");
 });
 ```
 
 ---
 
-## Phase 9: Testing & Refinement
+## Phase 9: Dashboard, KPIs & Notifications
 
 ### Git Workflow for Phase 9
 
 ```bash
 git checkout develop && git pull
-git checkout -b feature/phase-9-testing
-
-# After all tests pass and refinements complete:
-git checkout main
-git merge develop
-git tag -a v1.0.0 -m "Release version 1.0.0"
-git push origin main --tags
+git checkout -b feature/phase-9-dashboard-notifications
 ```
 
-### Prompt 9.1: Integration Tests
+### Prompt 9.1: KPI Catalogue & Dashboards
 
 ```
-Write comprehensive integration tests:
-
-1. Authentication Flow:
-   - Full login → access protected route → refresh → logout flow
-   - Token expiration handling
-   - Role-based access for all endpoints
-
-2. Crop Lifecycle:
-   - Create batch → add observations → record inputs →
-     report pest → record harvest → complete batch
-   - Verify all related records are created
-
-3. Animal Management Flow:
-   - Register animal → record health → record feeding →
-     diagnose disease → treat → record production
-
-4. Inventory Flow:
-   - Create item → purchase transaction → usage from crop/animal →
-     verify stock levels → low stock alert
-
-5. Financial Flow:
-   - Record sale → auto-create transaction →
-     generate profit/loss report → verify calculations
-
-6. Employee Workflow:
-   - Register → clock in/out → request leave → approve →
-     calculate salary → process payment
-
-7. Task Workflow:
-   - Create task → assign → start → update progress →
-     complete checklist → mark complete
-
-Use Supertest for API tests. Set up test database with migrations.
-Clean database between test suites.
+1. docs/kpis.md: for each KPI in IMPLEMENTATION_PLAN.md Phase 9, give the definition, formula, source tables, unit and default target.
+2. kpi.service.js implements each KPI for (enterprise_id?, from, to). A nightly kpi_snapshots table stores the daily values for fast trends.
+3. GET /dashboard is role-shaped:
+   - owner: revenue/cost/margin by enterprise, KPI tiles vs target, receivables, alerts
+   - manager: today's tasks, overdue, low stock, active withdrawals, hive visits due
+   - worker: my tasks and quick-log shortcuts
+4. Frontend:
+   - Replace Dashboard.vue with role dashboards (DashboardOwner, DashboardManager, DashboardWorker).
+   - KPI tiles with sparkline and target delta; enterprise filter.
 ```
 
-### Prompt 9.2: E2E Tests
+### Prompt 9.2: Jobs, Notifications, Weather, Export
 
 ```
-Write end-to-end tests with Playwright:
-
-1. Authentication:
-   - Login with valid credentials
-   - Login failure handling
-   - Logout and session clear
-
-2. Crop Management:
-   - Navigate to crops
-   - Create new batch
-   - View batch details
-   - Record harvest
-   - Report pest incident
-
-3. Animal Management:
-   - View animal list
-   - Register new animal
-   - Record health event
-   - Record production
-
-4. Dashboard:
-   - Verify KPIs load
-   - Chart interactions
-   - Date range filter
-   - Export functionality
-
-Focus on critical user flows. Include visual regression tests
-for key pages if possible.
+1. pg-boss:
+   - Starts with the API process (or a separate worker via npm run worker).
+   - Schedules in Africa/Nairobi: low-stock, expiring-batches, withdrawal-ending, care-plan-due, tasks-overdue, hive-visit-due, kpi-snapshot (01:00), daily-digest (06:00).
+2. Notifications:
+   - notifications(user_id, type, title, body, entity_type, entity_id, read_at, channels_sent) and notification_preferences(user_id, type, in_app, sms, whatsapp, email, quiet_hours).
+   - Channel adapters: InApp, AfricasTalkingSms, AfricasTalkingWhatsApp (behind interfaces; mocked in tests).
+   - Deduplicate by (user, type, entity, day).
+   - Password-reset links go through this engine.
+3. Weather:
+   - Open-Meteo forecast and daily history for the farm coordinates, cached in weather_daily.
+   - Shown on the dashboard, and rainfall is available in reports.
+4. GET /export/:module?format=csv streams CSV using the same filters as the list endpoints.
+5. Frontend: notification bell with unread count, notification centre, preferences page.
 ```
 
-### Prompt 9.3: Documentation
+### Phase 9 Tests
+
+```javascript
+describe("KPIs (fixtures with known answers)", () => {
+  it("hen-day % = eggs / (hens × days) × 100");
+  it("FCR = feed kg / weight gain kg");
+  it("milk per cow per day averages only lactating cows");
+  it("yield per m² for a greenhouse batch");
+  it("calving interval between consecutive calvings");
+});
+describe("Dashboard", () => {
+  it("owner payload contains finance; worker payload does not");
+});
+describe("Jobs & notifications", () => {
+  it("low-stock job creates one notification per item per day (dedup)");
+  it("respects preferences and quiet hours");
+  it("SMS adapter called with formatted message (mocked)");
+  it("daily digest summarises tasks, alerts and withdrawals");
+});
+describe("Export", () => {
+  it("CSV export honours list filters and role access");
+});
+```
+
+---
+
+## Phase 10: Production Readiness & Offline PWA
+
+### Git Workflow for Phase 10
+
+```bash
+git checkout develop && git pull
+git checkout -b feature/phase-10-production
+```
+
+### Prompt 10.1: Offline PWA
 
 ```
-Create comprehensive documentation:
+1. vite-plugin-pwa: app shell precache, runtime cache for reference data (items, locations, animals, groups, hives).
+2. The IndexedDB outbox (idb) holds quick-log and task-completion submissions with client_request_id (uuid v4).
+3. A sync worker flushes the outbox via POST /activities/bulk when online. Per-item results mark items synced or failed with a reason.
+4. UI: offline banner, "N pending / last synced at" indicator, failed-items review screen.
+```
 
-1. API Documentation:
-   - Generate OpenAPI/Swagger spec
-   - Include request/response examples
-   - Document authentication
-   - List all endpoints with parameters
+### Prompt 10.2: Deployment, Backups, Security, E2E, Docs
 
-2. User Guide:
-   - Getting started
-   - Module walkthroughs with screenshots
-   - Common workflows
-   - FAQ section
+```
+1. Dockerfiles:
+   - api: node:22-alpine, non-root
+   - web: build, then nginx:alpine serving dist and proxying /api
+   docker-compose.prod.yml with the api, web, postgres:18 and a backup sidecar. TLS via Let's Encrypt (certbot or Caddy).
+2. /health (liveness) and /ready (DB + migrations applied). Structured JSON logs with rotation.
+3. Backups:
+   - Nightly pg_dump -Fc plus an attachments tarball; retention 7 daily / 4 weekly / 6 monthly; off-site copy.
+   - scripts/restore.sh and docs/runbooks/restore.md.
+   - Perform and record a restore drill.
+4. Security:
+   - npm audit gate, CSP headers.
+   - An authz matrix test that iterates every route in the OpenAPI spec × {owner, manager, worker, anonymous} against expected access.
+5. Playwright E2E:
+   - login
+   - spray → harvest blocked → wait/override
+   - sale → partial payment → aging
+   - payroll run
+   - offline quick-log → reconnect → synced
+6. OpenAPI complete. Generate the Dart client (openapi-generator-cli) into a separate repo or folder as the Flutter starting point.
+7. Docs: user guides per role (owner, manager, worker), a Swahili quick-log guide, the admin/deploy runbook.
+8. Optional: M-Pesa Daraja C2B confirmation URL for automatic payment matching.
+```
 
-3. Developer Guide:
-   - Local setup instructions
-   - Architecture overview
-   - Coding standards
-   - Contributing guidelines
+### Phase 10 Tests
 
-4. Deployment Guide:
-   - Production requirements
-   - Environment configuration
-   - Database setup
-   - SSL/security checklist
-   - Backup procedures
+```javascript
+// e2e/*.spec.js (Playwright)
+test("owner logs in and sees owner dashboard");
+test("spraying a batch blocks harvest until PHI passes; owner override works");
+test("sale issued, partially paid, appears in 0-30 aging bucket");
+test("payroll run from draft to paid");
+test("offline quick-log entry syncs once online without duplicates");
 
-Create in Markdown format. Include diagrams where helpful.
+// tests/integration/authz-matrix.test.js
+describe("Authorization matrix", () => {
+  it("every OpenAPI operation enforces its declared roles");
+});
+
+// ops
+describe("Restore drill (manual, recorded in docs/runbooks/restore.md)", () => {
+  it("restores last night's dump to a fresh DB and app boots against it");
+});
 ```
 
 ---
@@ -1925,80 +1968,75 @@ Create in Markdown format. Include diagrams where helpful.
 ```
 packages/
 ├── backend/
+│   ├── jest.config.js
 │   └── tests/
+│       ├── setup/
+│       │   ├── env.js               # DB_NAME=farm_management_test etc.
+│       │   ├── global-setup.js      # create test DB + run migrations
+│       │   ├── global-teardown.js
+│       │   └── after-env.js         # truncateAll, pool close
+│       ├── factories/               # users, items, batches, animals, ...
 │       ├── unit/
-│       │   ├── services/
-│       │   │   ├── auth.service.test.js
-│       │   │   ├── crop.service.test.js
-│       │   │   ├── animal.service.test.js
-│       │   │   ├── inventory.service.test.js
-│       │   │   ├── financial.service.test.js
-│       │   │   ├── employee.service.test.js
-│       │   │   ├── task.service.test.js
-│       │   │   └── analytics.service.test.js
-│       │   ├── repositories/
-│       │   │   └── base.repository.test.js
-│       │   └── middleware/
-│       │       └── auth.middleware.test.js
-│       ├── integration/
-│       │   ├── auth.test.js
-│       │   ├── crops.test.js
-│       │   ├── animals.test.js
-│       │   ├── inventory.test.js
-│       │   ├── financial.test.js
-│       │   ├── employees.test.js
-│       │   └── tasks.test.js
-│       └── setup.js
-├── frontend/
-│   └── tests/
-│       ├── unit/
-│       │   ├── stores/
-│       │   │   └── auth.store.test.js
-│       │   ├── services/
-│       │   │   └── api.test.js
-│       │   └── views/
-│       │       ├── BatchForm.test.js
-│       │       └── BatchDetail.test.js
-│       └── e2e/
-│           ├── auth.spec.js
-│           ├── crops.spec.js
-│           └── dashboard.spec.js
+│       │   ├── repositories/base.repository.test.js
+│       │   ├── config/type-parsers.test.js
+│       │   ├── database/migrate.test.js
+│       │   ├── utils/units.test.js
+│       │   └── services/            # payroll, costing, kpi calculators
+│       └── integration/
+│           ├── auth.test.js
+│           ├── users.test.js
+│           ├── errors.test.js
+│           ├── soft-delete.test.js
+│           ├── crops.test.js
+│           ├── animals.test.js
+│           ├── inventory.test.js
+│           ├── inventory.transactions.test.js
+│           ├── consumption.test.js
+│           ├── activities.test.js
+│           ├── finance.test.js
+│           ├── costing.test.js
+│           ├── workforce.test.js
+│           ├── payroll.test.js
+│           ├── beekeeping.test.js
+│           ├── mushrooms.test.js
+│           ├── kpis.test.js
+│           ├── notifications.test.js
+│           └── authz-matrix.test.js
+└── frontend/
+    ├── tests/unit/
+    │   ├── stores/auth.store.test.js
+    │   ├── services/api.test.js
+    │   ├── router/guard.test.js
+    │   ├── composables/useLazyTable.test.js
+    │   └── components/               # InventoryItemPicker, HarvestForm, ...
+    └── e2e/                          # Playwright (Phase 10)
 ```
 
 ### Running Tests
 
 ```bash
-# Run all tests
-npm test
-
-# Run backend tests only
-npm run test:backend
-
-# Run frontend tests only
-npm run test:frontend
-
-# Run with coverage
-npm run test:coverage
-
-# Run E2E tests
-npm run test:e2e
-
-# Run specific test file
-npm test -- --grep "AuthService"
+# Local PostgreSQL must be running (credentials from packages/backend/.env); the test DB is created automatically
+npm run test:backend                      # all backend tests
+npm run test:backend -- tests/integration/auth.test.js
+npm run test:backend -- -t "FEFO"         # by test name
+npm run test:frontend                     # vitest
+npm test                                  # both
+npm run test:e2e                          # Playwright (Phase 10)
 ```
 
 ### Test Coverage Targets
 
-| Module    | Unit Tests | Integration Tests | Target Coverage |
-| --------- | ---------- | ----------------- | --------------- |
-| Auth      | 90%        | 85%               | 85%             |
-| Crops     | 80%        | 75%               | 75%             |
-| Animals   | 80%        | 75%               | 75%             |
-| Inventory | 80%        | 75%               | 75%             |
-| Financial | 85%        | 80%               | 80%             |
-| Employees | 85%        | 80%               | 80%             |
-| Tasks     | 80%        | 75%               | 75%             |
-| Analytics | 70%        | 65%               | 70%             |
+Coverage gates are raised per phase and enforced in CI (backend lines):
+
+| After phase | Gate | Must-have suites |
+|---|---|---|
+| 3.5 | 60% on touched modules | auth, base.repository, inventory transactions, errors, migrate |
+| 4 | 65% | consumption, PHI/withdrawal |
+| 5 | 70% | activities, audit |
+| 6 | 75% | finance, costing (known-answer fixtures) |
+| 7 | 75% | payroll (band edges), tasks, worker scope |
+| 8–9 | 75% | enterprise calculators, KPIs, notifications |
+| 10 | 80% + authz matrix + E2E | full |
 
 ---
 

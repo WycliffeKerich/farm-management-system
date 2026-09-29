@@ -1,4 +1,5 @@
 const BaseRepository = require('./base.repository');
+const { toSqlInt } = require('../utils/sql');
 
 /**
  * Repository for animal sales (uses sales table with reference_type='animal')
@@ -31,7 +32,7 @@ class AnimalSaleRepository extends BaseRepository {
       LEFT JOIN animal_types at ON ab.animal_type_id = at.id
       LEFT JOIN enterprises e ON s.enterprise_id = e.id
       LEFT JOIN users u ON s.recorded_by = u.id
-      WHERE s.reference_type IN ('animal', 'animal_group')
+      WHERE s.reference_type IN ('animal', 'animal_group') AND s.deleted_at IS NULL
     `;
 
     const values = [];
@@ -100,7 +101,7 @@ class AnimalSaleRepository extends BaseRepository {
       LEFT JOIN animal_types at ON ab.animal_type_id = at.id
       LEFT JOIN enterprises e ON s.enterprise_id = e.id
       LEFT JOIN users u ON s.recorded_by = u.id
-      WHERE s.id = $1 AND s.reference_type IN ('animal', 'animal_group')
+      WHERE s.id = $1 AND s.reference_type IN ('animal', 'animal_group') AND s.deleted_at IS NULL
     `;
     return await this.db.oneOrNone(query, [id]);
   }
@@ -126,7 +127,7 @@ class AnimalSaleRepository extends BaseRepository {
       LEFT JOIN animals a ON s.reference_type = 'animal' AND s.reference_id = a.id
       LEFT JOIN animal_groups ag ON s.reference_type = 'animal_group' AND s.reference_id = ag.id
       LEFT JOIN animal_breeds ab ON COALESCE(a.animal_breed_id, ag.animal_breed_id) = ab.id
-      WHERE s.reference_type IN ('animal', 'animal_group')
+      WHERE s.reference_type IN ('animal', 'animal_group') AND s.deleted_at IS NULL
     `;
 
     const values = [];
@@ -169,7 +170,7 @@ class AnimalSaleRepository extends BaseRepository {
       LEFT JOIN animal_groups ag ON s.reference_type = 'animal_group' AND s.reference_id = ag.id
       LEFT JOIN animal_breeds ab ON COALESCE(a.animal_breed_id, ag.animal_breed_id) = ab.id
       LEFT JOIN animal_types at ON ab.animal_type_id = at.id
-      WHERE s.reference_type IN ('animal', 'animal_group')
+      WHERE s.reference_type IN ('animal', 'animal_group') AND s.deleted_at IS NULL
         AND at.id IS NOT NULL
     `;
 
@@ -204,7 +205,7 @@ class AnimalSaleRepository extends BaseRepository {
         COALESCE(SUM(s.quantity), 0) as total_quantity,
         COALESCE(SUM(s.total_amount), 0) as total_revenue
       FROM ${this.tableName} s
-      WHERE s.reference_type IN ('animal', 'animal_group')
+      WHERE s.reference_type IN ('animal', 'animal_group') AND s.deleted_at IS NULL
     `;
 
     const values = [];
@@ -243,7 +244,7 @@ class AnimalSaleRepository extends BaseRepository {
         COALESCE(SUM(s.quantity), 0) as total_quantity,
         COALESCE(SUM(s.total_amount), 0) as total_spent
       FROM ${this.tableName} s
-      WHERE s.reference_type IN ('animal', 'animal_group')
+      WHERE s.reference_type IN ('animal', 'animal_group') AND s.deleted_at IS NULL
         AND s.customer_name IS NOT NULL
     `;
 
@@ -287,8 +288,8 @@ class AnimalSaleRepository extends BaseRepository {
       LEFT JOIN animal_groups ag ON s.reference_type = 'animal_group' AND s.reference_id = ag.id
       LEFT JOIN animal_breeds ab ON COALESCE(a.animal_breed_id, ag.animal_breed_id) = ab.id
       LEFT JOIN animal_types at ON ab.animal_type_id = at.id
-      WHERE s.reference_type IN ('animal', 'animal_group')
-        AND s.sale_date >= CURRENT_DATE - INTERVAL '${days} days'
+      WHERE s.reference_type IN ('animal', 'animal_group') AND s.deleted_at IS NULL
+        AND s.sale_date >= CURRENT_DATE - make_interval(days => ${toSqlInt(days, { name: 'days' })})
       ORDER BY s.sale_date DESC, s.created_at DESC
       LIMIT $1
     `;
@@ -312,7 +313,7 @@ class AnimalSaleRepository extends BaseRepository {
       LEFT JOIN animal_groups ag ON s.reference_type = 'animal_group' AND s.reference_id = ag.id
       LEFT JOIN animal_breeds ab ON COALESCE(a.animal_breed_id, ag.animal_breed_id) = ab.id
       LEFT JOIN animal_types at ON ab.animal_type_id = at.id
-      WHERE s.reference_type IN ('animal', 'animal_group')
+      WHERE s.reference_type IN ('animal', 'animal_group') AND s.deleted_at IS NULL
         AND s.payment_status IN ('pending', 'partial')
       ORDER BY s.sale_date ASC
       LIMIT $1

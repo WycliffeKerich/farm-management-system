@@ -2,18 +2,23 @@ const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
 const compression = require('compression');
-const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
 
 const morganMiddleware = require('./middleware/logger.middleware');
 const { errorHandler, notFound } = require('./middleware/error.middleware');
 const routes = require('./routes');
-const logger = require('./utils/logger');
 
 /**
  * Create Express application
  */
 const app = express();
+
+// Behind a reverse proxy (nginx, Caddy), set TRUST_PROXY=1 so req.ip - and therefore
+// rate limiting - uses the client address from X-Forwarded-For
+if (process.env.TRUST_PROXY) {
+  const hops = parseInt(process.env.TRUST_PROXY, 10);
+  app.set('trust proxy', Number.isNaN(hops) ? process.env.TRUST_PROXY : hops);
+}
 
 // Security middleware
 app.use(helmet());
@@ -27,8 +32,8 @@ app.use(
 );
 
 // Body parsers
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());
 
 // Compression middleware
@@ -36,18 +41,6 @@ app.use(compression());
 
 // HTTP request logging
 app.use(morganMiddleware);
-
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
-  message: 'Too many requests from this IP, please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-// Apply rate limiting to all API routes
-app.use('/api/', limiter);
 
 // API Routes
 app.use('/api/v1', routes);

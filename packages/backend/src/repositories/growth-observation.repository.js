@@ -19,7 +19,7 @@ class GrowthObservationRepository extends BaseRepository {
              u.first_name || ' ' || u.last_name as recorded_by_name
       FROM growth_observations go
       LEFT JOIN users u ON go.recorded_by = u.id
-      WHERE go.batch_id = $1
+      WHERE go.batch_id = $1 AND go.deleted_at IS NULL
       ORDER BY go.observation_date DESC
     `;
     return await this.db.any(query, [batchId]);
@@ -36,7 +36,7 @@ class GrowthObservationRepository extends BaseRepository {
              u.first_name || ' ' || u.last_name as recorded_by_name
       FROM growth_observations go
       LEFT JOIN users u ON go.recorded_by = u.id
-      WHERE go.batch_id = $1
+      WHERE go.batch_id = $1 AND go.deleted_at IS NULL
       ORDER BY go.observation_date DESC
       LIMIT 1
     `;
@@ -56,7 +56,7 @@ class GrowthObservationRepository extends BaseRepository {
              u.first_name || ' ' || u.last_name as recorded_by_name
       FROM growth_observations go
       LEFT JOIN users u ON go.recorded_by = u.id
-      WHERE go.batch_id = $1
+      WHERE go.batch_id = $1 AND go.deleted_at IS NULL
         AND go.observation_date BETWEEN $2 AND $3
       ORDER BY go.observation_date ASC
     `;
@@ -71,7 +71,7 @@ class GrowthObservationRepository extends BaseRepository {
     const query = `
       SELECT DISTINCT growth_stage
       FROM ${this.tableName}
-      WHERE growth_stage IS NOT NULL
+      WHERE growth_stage IS NOT NULL AND deleted_at IS NULL
       ORDER BY growth_stage ASC
     `;
     return await this.db.any(query);
@@ -85,7 +85,7 @@ class GrowthObservationRepository extends BaseRepository {
     const query = `
       SELECT DISTINCT health_status
       FROM ${this.tableName}
-      WHERE health_status IS NOT NULL
+      WHERE health_status IS NOT NULL AND deleted_at IS NULL
       ORDER BY health_status ASC
     `;
     return await this.db.any(query);

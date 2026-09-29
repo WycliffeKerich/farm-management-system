@@ -167,16 +167,17 @@ class AnimalRepository extends BaseRepository {
    * @param {number} id - Animal ID
    * @param {string} status - New status
    * @param {Date} statusDate - Status change date
+   * @param {Object} [t] - pg-promise task or transaction
    * @returns {Promise<Object>}
    */
-  async updateStatus(id, status, statusDate = new Date()) {
+  async updateStatus(id, status, statusDate = new Date(), t) {
     const query = `
       UPDATE ${this.tableName}
       SET status = $2, status_date = $3, updated_at = CURRENT_TIMESTAMP
       WHERE id = $1 AND deleted_at IS NULL
       RETURNING *
     `;
-    return await this.db.one(query, [id, status, statusDate]);
+    return await this.conn(t).one(query, [id, status, statusDate]);
   }
 
   /**
@@ -316,7 +317,7 @@ class AnimalRepository extends BaseRepository {
 
     const [countResult, data] = await Promise.all([
       this.db.one(countQuery, values.slice(0, -2)),
-      this.db.any(dataQuery, values)
+      this.db.any(dataQuery, values),
     ]);
 
     const total = parseInt(countResult.count, 10);
@@ -327,8 +328,8 @@ class AnimalRepository extends BaseRepository {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit)
-      }
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 
@@ -351,7 +352,7 @@ class AnimalRepository extends BaseRepository {
     const animalData = {
       ...data,
       status: 'active',
-      acquisition_type: data.acquisition_type || 'purchased'
+      acquisition_type: data.acquisition_type || 'purchased',
     };
     return await this.create(animalData);
   }

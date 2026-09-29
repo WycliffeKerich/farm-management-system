@@ -1,4 +1,5 @@
 const BaseRepository = require('./base.repository');
+const { NotFoundError, ValidationError } = require('../utils/errors');
 
 /**
  * Repository for animal_groups table operations (flock/herd tracking)
@@ -104,7 +105,7 @@ class AnimalGroupRepository extends BaseRepository {
    * @param {number} id - Group ID
    * @returns {Promise<Object|null>}
    */
-  async findByIdWithDetails(id) {
+  async findByIdWithDetails(id, t) {
     const query = `
       SELECT ag.*,
              ab.name as breed_name,
@@ -133,12 +134,12 @@ class AnimalGroupRepository extends BaseRepository {
       LEFT JOIN (
         SELECT animal_group_id, SUM(ABS(quantity)) as total_sold
         FROM animal_group_adjustments
-        WHERE adjustment_type = 'sale' AND deleted_at IS NULL
+        WHERE adjustment_type = 'sale'
         GROUP BY animal_group_id
       ) sale_stats ON ag.id = sale_stats.animal_group_id
       WHERE ag.id = $1 AND ag.deleted_at IS NULL
     `;
-    return await this.db.oneOrNone(query, [id]);
+    return await this.conn(t).oneOrNone(query, [id]);
   }
 
   /**
@@ -173,76 +174,64 @@ class AnimalGroupRepository extends BaseRepository {
   }
 
   /**
-   * Update group quantity
-   * @param {number} id - Group ID
-   * @param {number} newQuantity - New quantity
-   * @returns {Promise<Object>}
-   */
-  async updateQuantity(id, newQuantity) {
-    const query = `
-      UPDATE ${this.tableName}
-      SET current_quantity = $2, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND deleted_at IS NULL
-      RETURNING *
-    `;
-    return await this.db.one(query, [id, newQuantity]);
-  }
-
-  /**
-   * Adjust group quantity with tracking
+   * Adjust group quantity with tracking.
+   * The check and the update are a single statement, so concurrent adjustments
+   * cannot take the group below zero.
    * @param {number} id - Group ID
    * @param {number} adjustment - Quantity change (positive or negative)
    * @param {string} adjustmentType - Type of adjustment
    * @param {Object} details - Additional details
-   * @returns {Promise<Object>}
+   * @param {Object} [t] - pg-promise task or transaction
+   * @returns {Promise<{group: Object, adjustment: Object}>}
    */
-  async adjustQuantity(id, adjustment, adjustmentType, details = {}) {
-    // Get current group
-    const group = await this.findById(id);
-    if (!group) {
-      throw new Error('Group not found');
+  async adjustQuantity(id, adjustment, adjustmentType, details = {}, t) {
+    const conn = this.conn(t);
+    const updated = await conn.oneOrNone(
+      `UPDATE ${this.tableName}
+          SET current_quantity = COALESCE(current_quantity, quantity) + $2,
+              updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 AND deleted_at IS NULL
+          AND COALESCE(current_quantity, quantity) + $2 >= 0
+        RETURNING current_quantity`,
+      [id, adjustment]
+    );
+
+    if (!updated) {
+      if (!(await this.findById(id, t))) {
+        throw new NotFoundError('Group not found');
+      }
+      throw new ValidationError('Cannot reduce quantity below zero');
     }
 
-    const currentQuantity = group.current_quantity || group.quantity;
-    const newQuantity = currentQuantity + adjustment;
-
-    if (newQuantity < 0) {
-      throw new Error('Cannot reduce quantity below zero');
-    }
-
-    // Update group quantity
-    await this.updateQuantity(id, newQuantity);
-
-    // Record adjustment
-    const adjustmentQuery = `
-      INSERT INTO animal_group_adjustments (
+    const newQuantity = updated.current_quantity;
+    const adjustmentRecord = await conn.one(
+      `INSERT INTO animal_group_adjustments (
         animal_group_id, adjustment_date, adjustment_type,
         quantity, quantity_before, quantity_after,
         reason, reference_type, reference_id, unit_value, total_value,
         notes, recorded_by
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-      RETURNING *
-    `;
-
-    const adjustmentRecord = await this.db.one(adjustmentQuery, [
-      id,
-      details.adjustment_date || new Date(),
-      adjustmentType,
-      adjustment,
-      currentQuantity,
-      newQuantity,
-      details.reason || null,
-      details.reference_type || null,
-      details.reference_id || null,
-      details.unit_value || null,
-      details.total_value || null,
-      details.notes || null,
-      details.recorded_by || null
-    ]);
+      RETURNING *`,
+      [
+        id,
+        details.adjustment_date || new Date(),
+        adjustmentType,
+        adjustment,
+        newQuantity - adjustment,
+        newQuantity,
+        details.reason || null,
+        details.reference_type || null,
+        details.reference_id || null,
+        details.unit_value || null,
+        details.total_value || null,
+        details.notes || null,
+        details.recorded_by || null,
+      ]
+    );
 
     return {
-      group: await this.findByIdWithDetails(id),
-      adjustment: adjustmentRecord
+      group: await this.findByIdWithDetails(id, t),
+      adjustment: adjustmentRecord,
     };
   }
 
@@ -250,12 +239,13 @@ class AnimalGroupRepository extends BaseRepository {
    * Record addition to group (purchase, hatching, birth, transfer in)
    * @param {number} id - Group ID
    * @param {number} quantity - Quantity to add
-   * @param {string} type - Type: 'addition', 'hatched', 'born', 'transfer_in'
+   * @param {string} type - Type: 'addition', 'hatched', 'born', 'transfer_in', 'correction'
    * @param {Object} details - Additional details
+   * @param {Object} [t] - pg-promise task or transaction
    * @returns {Promise<Object>}
    */
-  async recordAddition(id, quantity, type, details = {}) {
-    return await this.adjustQuantity(id, Math.abs(quantity), type, details);
+  async recordAddition(id, quantity, type, details = {}, t) {
+    return await this.adjustQuantity(id, Math.abs(quantity), type, details, t);
   }
 
   /**
@@ -264,10 +254,11 @@ class AnimalGroupRepository extends BaseRepository {
    * @param {number} quantity - Quantity to remove
    * @param {string} type - Type: 'removal', 'sale', 'transfer_out'
    * @param {Object} details - Additional details
+   * @param {Object} [t] - pg-promise task or transaction
    * @returns {Promise<Object>}
    */
-  async recordRemoval(id, quantity, type, details = {}) {
-    return await this.adjustQuantity(id, -Math.abs(quantity), type, details);
+  async recordRemoval(id, quantity, type, details = {}, t) {
+    return await this.adjustQuantity(id, -Math.abs(quantity), type, details, t);
   }
 
   /**
@@ -368,7 +359,7 @@ class AnimalGroupRepository extends BaseRepository {
 
     const [countResult, data] = await Promise.all([
       this.db.one(countQuery, values.slice(0, -2)),
-      this.db.any(dataQuery, values)
+      this.db.any(dataQuery, values),
     ]);
 
     const total = parseInt(countResult.count, 10);
@@ -379,8 +370,8 @@ class AnimalGroupRepository extends BaseRepository {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit)
-      }
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 

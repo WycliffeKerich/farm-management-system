@@ -125,7 +125,7 @@ class AnimalHousingRepository extends BaseRepository {
       ORDER BY housing_type
     `;
     const result = await this.db.any(query);
-    return result.map(r => r.housing_type);
+    return result.map((r) => r.housing_type);
   }
 }
 

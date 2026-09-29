@@ -1,152 +1,137 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import authService from '@/services/auth.service';
+import { setAccessToken } from '@/services/api';
+
+const errorMessage = (err, fallback) => err?.response?.data?.error?.message || fallback;
 
 /**
- * Authentication store for managing user state
+ * Authentication state. The access token is held by the api module (memory only);
+ * this store holds the signed-in user.
  */
 export const useAuthStore = defineStore('auth', () => {
-    // State
     const user = ref(null);
     const loading = ref(false);
     const error = ref(null);
+    const initialized = ref(false);
+    let initializing = null;
 
-    // Getters
+    // user and the in-memory token are always set and cleared together
     const isAuthenticated = computed(() => !!user.value);
     const userRole = computed(() => user.value?.role || null);
-    const userName = computed(() => {
-        if (!user.value) return '';
-        return `${user.value.first_name} ${user.value.last_name}`;
-    });
+    const userName = computed(() => (user.value ? `${user.value.first_name} ${user.value.last_name}` : ''));
 
-    // Check if user has a specific role
+    /**
+     * @param {string|string[]} roles
+     * @returns {boolean}
+     */
     const hasRole = (roles) => {
         if (!user.value) return false;
-        if (Array.isArray(roles)) {
-            return roles.includes(user.value.role);
-        }
-        return user.value.role === roles;
+        return Array.isArray(roles) ? roles.includes(user.value.role) : user.value.role === roles;
     };
 
-    // Actions
     /**
-     * Login user
-     * @param {string} email - User email
-     * @param {string} password - User password
-     * @returns {Promise<boolean>} Success status
+     * @returns {Promise<boolean>} Success
      */
     async function login(email, password) {
         loading.value = true;
         error.value = null;
-
         try {
-            const response = await authService.login(email, password);
-
-            if (response.success) {
-                user.value = response.data.user;
-                localStorage.setItem('accessToken', response.data.accessToken);
-                return true;
-            }
-
-            error.value = response.error?.message || 'Login failed';
-            return false;
+            const data = await authService.login(email, password);
+            user.value = data.user;
+            initialized.value = true;
+            return true;
         } catch (err) {
-            error.value = err.response?.data?.error?.message || 'Login failed. Please try again.';
+            error.value = errorMessage(err, 'Login failed. Please try again.');
             return false;
         } finally {
             loading.value = false;
         }
     }
 
-    /**
-     * Logout user
-     */
     async function logout() {
         try {
             await authService.logout();
+        } catch {
+            // The local session is cleared regardless
         } finally {
-            user.value = null;
-            localStorage.removeItem('accessToken');
+            clearSession();
         }
     }
 
-    /**
-     * Fetch current user from API
-     * @returns {Promise<boolean>} Success status
-     */
-    async function fetchUser() {
-        const token = localStorage.getItem('accessToken');
-        if (!token) {
-            user.value = null;
-            return false;
-        }
-
-        loading.value = true;
-        error.value = null;
-
+    async function logoutAll() {
         try {
-            const response = await authService.getCurrentUser();
-            if (response.success) {
-                user.value = response.data;
-                return true;
-            }
-            return false;
-        } catch (err) {
-            user.value = null;
-            localStorage.removeItem('accessToken');
-            return false;
+            await authService.logoutAll();
         } finally {
-            loading.value = false;
+            clearSession();
         }
     }
 
     /**
-     * Update user profile
-     * @param {Object} data - Profile data to update
-     * @returns {Promise<boolean>} Success status
+     * Forget the session locally (e.g. after the refresh token was rejected)
+     */
+    function clearSession() {
+        user.value = null;
+        setAccessToken(null);
+    }
+
+    /**
+     * Restore the session from the refresh cookie. Runs once; later calls share the result.
+     * @returns {Promise<boolean>} Whether a session was restored
+     */
+    function initialize() {
+        if (initialized.value) return Promise.resolve(isAuthenticated.value);
+        if (!initializing) {
+            initializing = authService
+                .refresh()
+                .then((data) => {
+                    user.value = data.user;
+                    return true;
+                })
+                .catch(() => {
+                    clearSession();
+                    return false;
+                })
+                .finally(() => {
+                    initialized.value = true;
+                    initializing = null;
+                });
+        }
+        return initializing;
+    }
+
+    /**
+     * @param {Object} data - { first_name, last_name, phone }
+     * @returns {Promise<boolean>} Success
      */
     async function updateProfile(data) {
         loading.value = true;
         error.value = null;
-
         try {
-            const response = await authService.updateProfile(data);
-            if (response.success) {
-                user.value = { ...user.value, ...response.data };
-                return true;
-            }
-            error.value = response.error?.message || 'Update failed';
-            return false;
+            user.value = { ...user.value, ...(await authService.updateProfile(data)) };
+            return true;
         } catch (err) {
-            error.value = err.response?.data?.error?.message || 'Update failed';
+            error.value = errorMessage(err, 'Update failed');
             return false;
         } finally {
             loading.value = false;
         }
     }
 
-    /**
-     * Initialize auth state on app load
-     */
-    async function initialize() {
-        await fetchUser();
-    }
-
     return {
-        // State
         user,
         loading,
         error,
-        // Getters
+        initialized,
         isAuthenticated,
         userRole,
         userName,
         hasRole,
-        // Actions
         login,
         logout,
-        fetchUser,
-        updateProfile,
-        initialize
+        logoutAll,
+        clearSession,
+        initialize,
+        updateProfile
     };
 });

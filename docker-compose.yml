@@ -1,19 +1,20 @@
-version: '3.8'
-
+# Optional local database. Schema comes from `npm run migrate`, not from init scripts.
 services:
   postgres:
-    image: postgres:16
+    image: postgres:18
     container_name: farm_db
     restart: unless-stopped
     environment:
       POSTGRES_DB: farm_management
       POSTGRES_USER: farm_admin
       POSTGRES_PASSWORD: farm_password_dev
+      TZ: Africa/Nairobi
+      PGTZ: Africa/Nairobi
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./packages/backend/database/migrations:/docker-entrypoint-initdb.d
+      # postgres 18 keeps its data in a versioned subdirectory of /var/lib/postgresql
+      - postgres_data:/var/lib/postgresql
     networks:
       - farm_network
 

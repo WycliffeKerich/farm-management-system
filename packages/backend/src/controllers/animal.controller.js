@@ -194,11 +194,7 @@ class AnimalController {
       const { page, limit, ...filters } = req.query;
 
       if (page || limit) {
-        const result = await animalService.getPaginatedAnimals(
-          parseInt(page) || 1,
-          parseInt(limit) || 20,
-          filters
-        );
+        const result = await animalService.getPaginatedAnimals(parseInt(page) || 1, parseInt(limit) || 20, filters);
         res.json({ success: true, ...result });
       } else {
         const animals = await animalService.getAllAnimals(filters);
@@ -300,11 +296,7 @@ class AnimalController {
       const { page, limit, ...filters } = req.query;
 
       if (page || limit) {
-        const result = await animalService.getPaginatedGroups(
-          parseInt(page) || 1,
-          parseInt(limit) || 20,
-          filters
-        );
+        const result = await animalService.getPaginatedGroups(parseInt(page) || 1, parseInt(limit) || 20, filters);
         res.json({ success: true, ...result });
       } else {
         const groups = await animalService.getAllGroups(filters);
@@ -344,11 +336,7 @@ class AnimalController {
 
   async recordGroupAddition(req, res, next) {
     try {
-      const result = await animalService.recordGroupAddition(
-        req.params.id,
-        req.body,
-        req.user.id
-      );
+      const result = await animalService.recordGroupAddition(req.params.id, req.body, req.user.id);
       res.status(201).json({ success: true, data: result });
     } catch (error) {
       next(error);
@@ -357,12 +345,8 @@ class AnimalController {
 
   async recordGroupRemoval(req, res, next) {
     try {
-      const result = await animalService.recordGroupRemoval(
-        req.params.id,
-        req.body,
-        req.user.id
-      );
-      res.json({ success: true, data: result });
+      const result = await animalService.recordGroupRemoval(req.params.id, req.body, req.user.id);
+      res.status(201).json({ success: true, data: result });
     } catch (error) {
       next(error);
     }
@@ -408,11 +392,7 @@ class AnimalController {
 
   async recordAnimalDeath(req, res, next) {
     try {
-      const death = await animalService.recordAnimalDeath(
-        req.params.animalId,
-        req.body,
-        req.user.id
-      );
+      const death = await animalService.recordAnimalDeath(req.params.animalId, req.body, req.user.id);
       res.status(201).json({ success: true, data: death });
     } catch (error) {
       next(error);
@@ -421,11 +401,7 @@ class AnimalController {
 
   async recordGroupDeaths(req, res, next) {
     try {
-      const death = await animalService.recordGroupDeaths(
-        req.params.groupId,
-        req.body,
-        req.user.id
-      );
+      const death = await animalService.recordGroupDeaths(req.params.groupId, req.body, req.user.id);
       res.status(201).json({ success: true, data: death });
     } catch (error) {
       next(error);
@@ -480,10 +456,7 @@ class AnimalController {
   async getRecentDeathAlerts(req, res, next) {
     try {
       const { days, limit } = req.query;
-      const deaths = await animalService.getRecentDeathAlerts(
-        parseInt(days) || 7,
-        parseInt(limit) || 10
-      );
+      const deaths = await animalService.getRecentDeathAlerts(parseInt(days) || 7, parseInt(limit) || 10);
       res.json({ success: true, data: deaths });
     } catch (error) {
       next(error);
@@ -622,12 +595,7 @@ class AnimalController {
   async applyCarePlanToAnimal(req, res, next) {
     try {
       const { plan_id, start_date } = req.body;
-      const schedule = await animalService.applyCarePlanToAnimal(
-        req.params.animalId,
-        plan_id,
-        start_date,
-        req.user.id
-      );
+      const schedule = await animalService.applyCarePlanToAnimal(req.params.animalId, plan_id, start_date, req.user.id);
       res.status(201).json({ success: true, data: schedule });
     } catch (error) {
       next(error);
@@ -637,12 +605,7 @@ class AnimalController {
   async applyCarePlanToGroup(req, res, next) {
     try {
       const { plan_id, start_date } = req.body;
-      const schedule = await animalService.applyCarePlanToGroup(
-        req.params.groupId,
-        plan_id,
-        start_date,
-        req.user.id
-      );
+      const schedule = await animalService.applyCarePlanToGroup(req.params.groupId, plan_id, start_date, req.user.id);
       res.status(201).json({ success: true, data: schedule });
     } catch (error) {
       next(error);
@@ -724,12 +687,7 @@ class AnimalController {
   async completeScheduledTask(req, res, next) {
     try {
       const { notes, quantity_treated } = req.body;
-      const task = await animalService.completeScheduledTask(
-        req.params.taskId,
-        req.user.id,
-        notes,
-        quantity_treated
-      );
+      const task = await animalService.completeScheduledTask(req.params.taskId, req.user.id, notes, quantity_treated);
       res.json({ success: true, data: task });
     } catch (error) {
       next(error);
@@ -754,11 +712,7 @@ class AnimalController {
   async skipScheduledTask(req, res, next) {
     try {
       const { reason } = req.body;
-      const task = await animalService.skipScheduledTask(
-        req.params.taskId,
-        req.user.id,
-        reason
-      );
+      const task = await animalService.skipScheduledTask(req.params.taskId, req.user.id, reason);
       res.json({ success: true, data: task });
     } catch (error) {
       next(error);
@@ -869,10 +823,7 @@ class AnimalController {
   async getUpcomingFollowups(req, res, next) {
     try {
       const { days, limit } = req.query;
-      const followups = await animalService.getUpcomingFollowups(
-        parseInt(days) || 30,
-        parseInt(limit) || 10
-      );
+      const followups = await animalService.getUpcomingFollowups(parseInt(days) || 30, parseInt(limit) || 10);
       res.json({ success: true, data: followups });
     } catch (error) {
       next(error);
@@ -1212,10 +1163,7 @@ class AnimalController {
   async getExpectedDeliveries(req, res, next) {
     try {
       const { days, limit } = req.query;
-      const deliveries = await animalService.getExpectedDeliveries(
-        parseInt(days) || 30,
-        parseInt(limit) || 20
-      );
+      const deliveries = await animalService.getExpectedDeliveries(parseInt(days) || 30, parseInt(limit) || 20);
       res.json({ success: true, data: deliveries });
     } catch (error) {
       next(error);
@@ -1236,10 +1184,7 @@ class AnimalController {
     try {
       const { animalId } = req.params;
       const { role } = req.query;
-      const performance = await animalService.getBreedingPerformance(
-        parseInt(animalId),
-        role || 'both'
-      );
+      const performance = await animalService.getBreedingPerformance(parseInt(animalId), role || 'both');
       res.json({ success: true, data: performance });
     } catch (error) {
       next(error);
@@ -1351,10 +1296,7 @@ class AnimalController {
   async getRecentAnimalSales(req, res, next) {
     try {
       const { days, limit } = req.query;
-      const sales = await animalService.getRecentAnimalSales(
-        parseInt(days) || 30,
-        parseInt(limit) || 10
-      );
+      const sales = await animalService.getRecentAnimalSales(parseInt(days) || 30, parseInt(limit) || 10);
       res.json({ success: true, data: sales });
     } catch (error) {
       next(error);

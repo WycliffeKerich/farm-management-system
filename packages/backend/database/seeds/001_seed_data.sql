@@ -23,7 +23,7 @@ INSERT INTO crop_types (name, category, typical_growth_days, description) VALUES
 ('Strawberry', 'greenhouse', 90, 'Strawberries grown in controlled environment'),
 ('Button Mushroom', 'mushroom', 21, 'Common edible mushroom variety'),
 ('Oyster Mushroom', 'mushroom', 14, 'Fast-growing oyster mushroom')
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT (LOWER(name)) WHERE deleted_at IS NULL DO NOTHING;
 
 INSERT INTO crop_varieties (crop_type_id, name, growth_days, notes) VALUES
 (1, 'Cherry Tomato', 65, 'Small sweet tomatoes'),
@@ -56,7 +56,7 @@ INSERT INTO animal_types (name, category, production_types) VALUES
 ('Sheep', 'livestock', '["meat", "wool"]'),
 ('Cow', 'livestock', '["milk", "meat"]'),
 ('Bee', 'apiculture', '["honey"]')
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT (LOWER(name)) WHERE deleted_at IS NULL DO NOTHING;
 
 INSERT INTO animal_breeds (animal_type_id, name, description) VALUES
 (1, 'Improved Kienyeji', 'Indigenous chicken breed improved for better production'),
