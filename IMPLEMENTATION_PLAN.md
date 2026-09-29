@@ -29,7 +29,7 @@ A farm management system for a Kenyan smallholder farm covering:
 
 ## Current Status
 
-_As of 2026-09-29, on `develop` at commit `82ac4b0`._
+_As of 2026-09-29, on `develop` at commit `0be4476`._
 
 ### Delivered
 
@@ -38,11 +38,12 @@ _As of 2026-09-29, on `develop` at commit `82ac4b0`._
 | 1 | Foundation: monorepo, Express, pg-promise, JWT auth, Vue/PrimeVue shell | ✅ Merged |
 | 2 | Crop management: types/varieties/locations, batches, observations, harvests, inputs, pests, care plans | ✅ Merged |
 | 3 | Animal management: animals/groups, health, treatments, feed, breeding, production, incubation, deaths, care plans | ✅ Merged |
-| 4 | Inventory: categories, items, units of measure, batches (FEFO), transactions, frontend | 🟡 **Uncommitted work on `develop`**, not integrated with crops or animals |
+| 3.5 | Hardening & test harness: auth, repositories, errors, soft deletes, migration runner, Jest/Vitest, CI | ✅ Merged (PR #1) |
+| 4 | Inventory: categories, items, units of measure, batches (FEFO), transactions, frontend | 🟡 Ledger and UI merged (PR #2); not yet integrated with crops or animals |
 
 ### Review findings to fix before building further
 
-These are addressed in **Phase 3.5**.
+These were addressed in **Phase 3.5** (merged).
 
 | # | Severity | Finding | Location |
 |---|---|---|---|
@@ -294,8 +295,8 @@ Each phase has its own feature branch off `develop` and must meet the [Definitio
 ✅ 1 Foundation   ✅ 2 Crops   ✅ 3 Animals
    │
    ▼
-3.5 Hardening & Test Harness ───────────── (1.5 wk)  ◀ START HERE
-4   Inventory Completion & Integration ─── (1.5 wk)
+✅ 3.5 Hardening & Test Harness ───────── (1.5 wk)
+4   Inventory Completion & Integration ─── (1.5 wk)  ◀ IN PROGRESS
 5   Activity Model & Platform Foundations  (1.5 wk)
 6   Finance & Enterprise Costing ───────── (2 wk)
 7   Workforce: Tasks + Employees + Payroll (2.5 wk)
@@ -325,7 +326,7 @@ _Carried forward:_
 
 ---
 
-### Phase 3.5: Hardening & Test Harness (1.5 weeks) ◀ code complete; awaiting push, PR and required CI check
+### Phase 3.5: Hardening & Test Harness (1.5 weeks) ✅
 **Branch:** `feature/phase-3.5-hardening`
 
 **Goal:** make the existing code safe and correct, and put the test and CI safety net in place, before adding features.
@@ -400,11 +401,9 @@ Done on `feature/phase-4-inventory` (rebased onto `feature/phase-3.5-hardening`,
   - Backend: 132 Jest tests (22 for inventory), 77% line coverage overall.
   - Frontend: 46 Vitest tests.
 
-Open:
-- **Push and open the PRs:** the Phase 3.5 PR into `develop` first, then Phase 4 (needs `--force-with-lease`, since it was rebased).
-- **CI as a required check:** make CI required on `develop` in the GitHub branch protection settings after the first green run.
+Merged 2026-09-29: PR #1 (Phase 3.5) and PR #2 (Phase 4 part 1) into `develop`. `develop` is protected: a PR is required and the CI `test` check must pass on an up-to-date branch. No approving review is required, since there is a single maintainer.
 
-Follow-ups:
+Follow-ups (carried into Phase 4):
 - **`timestamptz` migration:** `TIMESTAMP` columns (`created_at`, `last_login`, `locked_until`, …) are serialised using Node's local timezone. Converting them to `timestamptz` removes the dependency on the server's timezone for displayed times. This is a small migration; schedule it early in Phase 4.
 - **Frontend tests for views:** the coverage gate covers only the session and routing core. Extend `coverage.include` as views and stores get tests (start with the user management and inventory transaction forms).
 - **FEFO for every outgoing movement:** only "usage" on the item screen draws from batches. Waste, expiry and usage recorded elsewhere reduce item stock but not batch quantities, so batch totals can exceed item stock (the reconcile check reports this). Route all outgoing movements for batch-tracked items through FEFO in Phase 4.
@@ -414,12 +413,12 @@ Follow-ups:
 ---
 
 ### Phase 4: Inventory Completion & Integration (1.5 weeks)
-**Branch:** `feature/phase-4-inventory`, rebased on the hardened `develop`.
+**Branch:** `feature/phase-4-integration` (part 1 merged from `feature/phase-4-inventory` as PR #2).
 
 **Goal:** make inventory the single source for everything the farm consumes, and make safety intervals enforceable.
 
 **Backend:**
-1. Rebase the WIP. Bring the inventory repositories and service onto the Phase 3.5 patterns (tx, whitelists, typed errors, parsed numerics).
+1. ~~Rebase the WIP. Bring the inventory repositories and service onto the Phase 3.5 patterns (tx, whitelists, typed errors, parsed numerics).~~ Done in PR #2.
 2. `suppliers` CRUD. Purchases record supplier, unit cost, batch number and expiry.
 3. **Integration**, each inside one transaction:
    - **Crop input application** → FEFO usage transaction → cost captured on the application → `safe_harvest_date` recalculated on the batch.
