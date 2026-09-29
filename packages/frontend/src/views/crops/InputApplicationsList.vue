@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import cropService from '@/services/crop.service';
+import { toApiDate } from '@/utils/dates';
 
 const router = useRouter();
 
@@ -155,7 +156,7 @@ const saveApplication = async () => {
     try {
         const payload = {
             ...applicationForm.value,
-            application_date: applicationForm.value.application_date instanceof Date ? applicationForm.value.application_date.toISOString().split('T')[0] : applicationForm.value.application_date
+            application_date: toApiDate(applicationForm.value.application_date)
         };
 
         await cropService.recordInputApplication(applicationForm.value.batch_id, payload);

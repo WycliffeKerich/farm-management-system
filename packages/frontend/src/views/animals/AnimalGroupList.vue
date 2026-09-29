@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
 import animalService from '@/services/animal.service';
+import { toApiDate } from '@/utils/dates';
 
 const router = useRouter();
 const confirm = useConfirm();
@@ -254,7 +255,7 @@ const saveGroup = async () => {
             group_code: groupForm.value.group_code || undefined,
             name: groupForm.value.name,
             housing_id: groupForm.value.housing_id,
-            acquisition_date: formatDateForApi(groupForm.value.acquisition_date),
+            acquisition_date: toApiDate(groupForm.value.acquisition_date),
             acquisition_type: groupForm.value.acquisition_type,
             cost_per_unit: groupForm.value.cost_per_unit,
             notes: groupForm.value.notes
@@ -325,7 +326,7 @@ const recordAddition = async () => {
         await animalService.recordGroupAddition(selectedGroup.value.id, {
             quantity: additionForm.value.quantity,
             adjustment_type: additionForm.value.adjustment_type,
-            adjustment_date: formatDateForApi(additionForm.value.date),
+            adjustment_date: toApiDate(additionForm.value.date),
             cost_per_unit: additionForm.value.cost_per_unit,
             notes: additionForm.value.notes
         });
@@ -377,7 +378,7 @@ const recordSale = async () => {
         await animalService.recordGroupRemoval(selectedGroup.value.id, {
             quantity: saleForm.value.quantity,
             adjustment_type: 'sale',
-            adjustment_date: formatDateForApi(saleForm.value.sale_date),
+            adjustment_date: toApiDate(saleForm.value.sale_date),
             unit_value: saleForm.value.price_per_unit,
             reason: saleForm.value.buyer_name ? `Sold to ${saleForm.value.buyer_name}` : 'Sold',
             notes: saleForm.value.notes
@@ -429,7 +430,7 @@ const recordDeath = async () => {
     try {
         await animalService.recordGroupDeaths(selectedGroup.value.id, {
             quantity: deathForm.value.quantity,
-            death_date: formatDateForApi(deathForm.value.death_date),
+            death_date: toApiDate(deathForm.value.death_date),
             cause_category: deathForm.value.cause_category,
             cause_of_death: deathForm.value.cause_of_death,
             notes: deathForm.value.notes
@@ -492,11 +493,6 @@ const deleteGroup = async (group) => {
 const formatDate = (date) => {
     if (!date) return '-';
     return new Date(date).toLocaleDateString();
-};
-
-const formatDateForApi = (date) => {
-    if (!date) return null;
-    return new Date(date).toISOString().split('T')[0];
 };
 
 const formatStatus = (status) => {

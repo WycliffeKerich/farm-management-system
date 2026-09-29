@@ -12,6 +12,7 @@ import Textarea from 'primevue/textarea';
 import Select from 'primevue/select';
 import DatePicker from 'primevue/datepicker';
 import Tag from 'primevue/tag';
+import { toApiDate } from '@/utils/dates';
 
 const toast = useToast();
 
@@ -75,8 +76,8 @@ const loadRecords = async () => {
     loading.value = true;
     try {
         const params = {
-            start_date: filters.value.start_date ? formatDateForAPI(filters.value.start_date) : null,
-            end_date: filters.value.end_date ? formatDateForAPI(filters.value.end_date) : null
+            start_date: filters.value.start_date ? toApiDate(filters.value.start_date) : null,
+            end_date: filters.value.end_date ? toApiDate(filters.value.end_date) : null
         };
 
         if (filters.value.status === 'pending') {
@@ -100,8 +101,8 @@ const loadRecords = async () => {
 const loadStatistics = async () => {
     try {
         const params = {
-            start_date: filters.value.start_date ? formatDateForAPI(filters.value.start_date) : null,
-            end_date: filters.value.end_date ? formatDateForAPI(filters.value.end_date) : null
+            start_date: filters.value.start_date ? toApiDate(filters.value.start_date) : null,
+            end_date: filters.value.end_date ? toApiDate(filters.value.end_date) : null
         };
         const response = await animalService.getBreedingStatistics(params);
         statistics.value = response.data.data;
@@ -208,9 +209,9 @@ const saveRecord = async () => {
     try {
         const data = {
             ...recordForm.value,
-            breeding_date: formatDateForAPI(recordForm.value.breeding_date),
-            expected_delivery_date: recordForm.value.expected_delivery_date ? formatDateForAPI(recordForm.value.expected_delivery_date) : null,
-            actual_delivery_date: recordForm.value.actual_delivery_date ? formatDateForAPI(recordForm.value.actual_delivery_date) : null
+            breeding_date: toApiDate(recordForm.value.breeding_date),
+            expected_delivery_date: recordForm.value.expected_delivery_date ? toApiDate(recordForm.value.expected_delivery_date) : null,
+            actual_delivery_date: recordForm.value.actual_delivery_date ? toApiDate(recordForm.value.actual_delivery_date) : null
         };
 
         if (recordForm.value.id) {
@@ -264,12 +265,6 @@ const onSearch = () => {
 const formatDate = (date) => {
     if (!date) return '';
     return new Date(date).toLocaleDateString('en-KE', { year: 'numeric', month: 'short', day: 'numeric' });
-};
-
-const formatDateForAPI = (date) => {
-    if (!date) return null;
-    const d = new Date(date);
-    return d.toISOString().split('T')[0];
 };
 
 const isOverdue = (date) => {

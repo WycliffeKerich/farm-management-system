@@ -12,6 +12,7 @@ import Textarea from 'primevue/textarea';
 import Select from 'primevue/select';
 import DatePicker from 'primevue/datepicker';
 import Tag from 'primevue/tag';
+import { toApiDate } from '@/utils/dates';
 
 const toast = useToast();
 
@@ -81,8 +82,8 @@ const loadRecords = async () => {
     try {
         const params = {
             status: filters.value.status,
-            start_date: filters.value.start_date ? formatDateForAPI(filters.value.start_date) : null,
-            end_date: filters.value.end_date ? formatDateForAPI(filters.value.end_date) : null
+            start_date: filters.value.start_date ? toApiDate(filters.value.start_date) : null,
+            end_date: filters.value.end_date ? toApiDate(filters.value.end_date) : null
         };
 
         const response = await animalService.getIncubationRecords(params);
@@ -231,9 +232,9 @@ const saveRecord = async () => {
     try {
         const data = {
             ...recordForm.value,
-            incubation_start_date: formatDateForAPI(recordForm.value.incubation_start_date),
-            expected_hatch_date: formatDateForAPI(recordForm.value.expected_hatch_date),
-            actual_hatch_date: recordForm.value.actual_hatch_date ? formatDateForAPI(recordForm.value.actual_hatch_date) : null
+            incubation_start_date: toApiDate(recordForm.value.incubation_start_date),
+            expected_hatch_date: toApiDate(recordForm.value.expected_hatch_date),
+            actual_hatch_date: recordForm.value.actual_hatch_date ? toApiDate(recordForm.value.actual_hatch_date) : null
         };
 
         if (recordForm.value.id) {
@@ -287,12 +288,6 @@ const formatDate = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-};
-
-const formatDateForAPI = (date) => {
-    if (!date) return null;
-    const d = new Date(date);
-    return d.toISOString().split('T')[0];
 };
 
 const isOverdue = (dateString) => {
