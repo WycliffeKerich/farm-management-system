@@ -386,6 +386,9 @@ const inventoryValidators = {
       .optional({ values: 'null' })
       .trim()
       .isLength({ max: 255 }).withMessage('Supplier must be at most 255 characters'),
+    body('supplier_id')
+      .optional({ values: 'null' })
+      .isInt().withMessage('Supplier ID must be an integer'),
     body('supplier_batch_number')
       .optional({ values: 'null' })
       .trim()
@@ -418,6 +421,9 @@ const inventoryValidators = {
       .optional({ values: 'null' })
       .trim()
       .isLength({ max: 255 }).withMessage('Supplier must be at most 255 characters'),
+    body('supplier_id')
+      .optional({ values: 'null' })
+      .isInt().withMessage('Supplier ID must be an integer'),
     body('supplier_batch_number')
       .optional({ values: 'null' })
       .trim()

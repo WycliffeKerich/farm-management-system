@@ -3,6 +3,7 @@ const inventoryItemRepository = require('../repositories/inventory-item.reposito
 const inventoryTransactionRepository = require('../repositories/inventory-transaction.repository');
 const inventoryBatchRepository = require('../repositories/inventory-batch.repository');
 const unitOfMeasureRepository = require('../repositories/unit-of-measure.repository');
+const supplierRepository = require('../repositories/supplier.repository');
 const { db } = require('../config/database');
 const { NotFoundError, ValidationError, ConflictError } = require('../utils/errors');
 const { INVENTORY_TRANSACTION_TYPES, INVENTORY_OUTGOING_TYPES } = require('../config/constants');
@@ -25,6 +26,30 @@ function toQuantity(value) {
     throw new ValidationError('Quantity must be a number');
   }
   return fromHundredths(toHundredths(number));
+}
+
+/**
+ * Keep a record's supplier id and its free-text supplier name in step: an id
+ * fills in the name, a name that matches a supplier fills in the id, and
+ * clearing the name clears the id.
+ * @param {Object} data - Item or batch fields
+ * @param {string} idField - 'default_supplier_id' or 'supplier_id'
+ * @returns {Promise<Object>} data with both fields set
+ * @throws {NotFoundError} when the id names no supplier
+ */
+async function withSupplier(data, idField) {
+  if (data[idField]) {
+    const supplier = await supplierRepository.findById(data[idField]);
+    if (!supplier) {
+      throw new NotFoundError('Supplier not found');
+    }
+    return { ...data, supplier: supplier.name };
+  }
+  if (data[idField] === undefined && 'supplier' in data) {
+    const supplier = data.supplier && (await supplierRepository.findByName(data.supplier));
+    return supplier ? { ...data, [idField]: supplier.id, supplier: supplier.name } : { ...data, [idField]: null };
+  }
+  return data;
 }
 
 function insufficientStock(available, requested, unit) {
@@ -187,6 +212,7 @@ class InventoryService {
     if (openingStock < 0) {
       throw new ValidationError('Opening stock cannot be negative');
     }
+    data = await withSupplier(data, 'default_supplier_id');
 
     return db.tx(async (t) => {
       const prefix = InventoryService.CATEGORY_PREFIXES[category.name] || 'INV';
@@ -250,7 +276,7 @@ class InventoryService {
     // Stock only changes through the ledger, and codes are permanent
     const { current_stock: _stock, item_code: _code, ...changes } = data;
 
-    return await inventoryItemRepository.update(id, changes);
+    return await inventoryItemRepository.update(id, await withSupplier(changes, 'default_supplier_id'));
   }
 
   /**
@@ -855,6 +881,7 @@ class InventoryService {
     if (quantity <= 0) {
       throw new ValidationError('Quantity must be greater than zero');
     }
+    data = await withSupplier(data, 'supplier_id');
 
     return db.tx(async (t) => {
       const item = await inventoryItemRepository.findByIdForUpdate(data.inventory_item_id, t);
@@ -899,7 +926,7 @@ class InventoryService {
     // Quantities only change through the ledger
     const { quantity: _quantity, initial_quantity: _initial, inventory_item_id: _item, ...changes } = data;
 
-    return await inventoryBatchRepository.update(id, changes);
+    return await inventoryBatchRepository.update(id, await withSupplier(changes, 'supplier_id'));
   }
 
   /**
