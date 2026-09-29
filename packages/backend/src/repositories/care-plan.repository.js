@@ -1,4 +1,5 @@
 const BaseRepository = require('./base.repository');
+const { NotFoundError } = require('../utils/errors');
 
 /**
  * Repository for crop_care_plans table operations
@@ -131,7 +132,7 @@ class CarePlanRepository extends BaseRepository {
     // Get original plan
     const original = await this.findWithTasks(planId);
     if (!original) {
-      throw new Error('Plan not found');
+      throw new NotFoundError('Plan not found');
     }
 
     // Generate new plan code

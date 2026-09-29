@@ -1,4 +1,5 @@
 const BaseRepository = require('./base.repository');
+const { NotFoundError } = require('../utils/errors');
 
 /**
  * Repository for animal_care_plans table operations
@@ -175,7 +176,7 @@ class AnimalCarePlanRepository extends BaseRepository {
   async clonePlan(planId, newName, userId) {
     const original = await this.findWithTasks(planId);
     if (!original) {
-      throw new Error('Plan not found');
+      throw new NotFoundError('Plan not found');
     }
 
     const planCode = await this.generatePlanCode('ACP');

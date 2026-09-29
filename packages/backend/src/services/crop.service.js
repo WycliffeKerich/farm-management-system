@@ -10,6 +10,7 @@ const carePlanRepository = require('../repositories/care-plan.repository');
 const carePlanTaskRepository = require('../repositories/care-plan-task.repository');
 const batchCareScheduleRepository = require('../repositories/batch-care-schedule.repository');
 const scheduledBatchTaskRepository = require('../repositories/scheduled-batch-task.repository');
+const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
 
 /**
  * Service for crop management operations
@@ -33,7 +34,7 @@ class CropService {
   async getCropTypeById(id) {
     const cropType = await cropTypeRepository.findById(id);
     if (!cropType) {
-      throw new Error('Crop type not found');
+      throw new NotFoundError('Crop type not found');
     }
     return cropType;
   }
@@ -46,7 +47,7 @@ class CropService {
   async createCropType(data) {
     const existing = await cropTypeRepository.findByName(data.name);
     if (existing) {
-      throw new Error('Crop type with this name already exists');
+      throw new ConflictError('Crop type with this name already exists');
     }
     return await cropTypeRepository.create(data);
   }
@@ -60,13 +61,13 @@ class CropService {
   async updateCropType(id, data) {
     const cropType = await cropTypeRepository.findById(id);
     if (!cropType) {
-      throw new Error('Crop type not found');
+      throw new NotFoundError('Crop type not found');
     }
 
     if (data.name && data.name !== cropType.name) {
       const existing = await cropTypeRepository.findByName(data.name);
       if (existing) {
-        throw new Error('Crop type with this name already exists');
+        throw new ConflictError('Crop type with this name already exists');
       }
     }
 
@@ -81,7 +82,7 @@ class CropService {
   async deleteCropType(id) {
     const cropType = await cropTypeRepository.findById(id);
     if (!cropType) {
-      throw new Error('Crop type not found');
+      throw new NotFoundError('Crop type not found');
     }
     await cropTypeRepository.delete(id);
   }
@@ -121,7 +122,7 @@ class CropService {
   async getVarietyById(id) {
     const variety = await cropVarietyRepository.findByIdWithDetails(id);
     if (!variety) {
-      throw new Error('Crop variety not found');
+      throw new NotFoundError('Crop variety not found');
     }
     return variety;
   }
@@ -134,12 +135,12 @@ class CropService {
   async createVariety(data) {
     const cropType = await cropTypeRepository.findById(data.crop_type_id);
     if (!cropType) {
-      throw new Error('Crop type not found');
+      throw new NotFoundError('Crop type not found');
     }
 
     const existing = await cropVarietyRepository.findByNameAndCropType(data.name, data.crop_type_id);
     if (existing) {
-      throw new Error('Variety with this name already exists for this crop type');
+      throw new ConflictError('Variety with this name already exists for this crop type');
     }
 
     return await cropVarietyRepository.create(data);
@@ -154,7 +155,7 @@ class CropService {
   async updateVariety(id, data) {
     const variety = await cropVarietyRepository.findById(id);
     if (!variety) {
-      throw new Error('Crop variety not found');
+      throw new NotFoundError('Crop variety not found');
     }
 
     if (data.name && (data.name !== variety.name || data.crop_type_id !== variety.crop_type_id)) {
@@ -163,7 +164,7 @@ class CropService {
         data.crop_type_id || variety.crop_type_id
       );
       if (existing && existing.id !== id) {
-        throw new Error('Variety with this name already exists for this crop type');
+        throw new ConflictError('Variety with this name already exists for this crop type');
       }
     }
 
@@ -178,7 +179,7 @@ class CropService {
   async deleteVariety(id) {
     const variety = await cropVarietyRepository.findById(id);
     if (!variety) {
-      throw new Error('Crop variety not found');
+      throw new NotFoundError('Crop variety not found');
     }
     await cropVarietyRepository.delete(id);
   }
@@ -209,7 +210,7 @@ class CropService {
   async getLocationById(id) {
     const location = await growingLocationRepository.findById(id);
     if (!location) {
-      throw new Error('Growing location not found');
+      throw new NotFoundError('Growing location not found');
     }
     return location;
   }
@@ -222,7 +223,7 @@ class CropService {
   async createLocation(data) {
     const existing = await growingLocationRepository.findByName(data.name);
     if (existing) {
-      throw new Error('Location with this name already exists');
+      throw new ConflictError('Location with this name already exists');
     }
     return await growingLocationRepository.create(data);
   }
@@ -236,13 +237,13 @@ class CropService {
   async updateLocation(id, data) {
     const location = await growingLocationRepository.findById(id);
     if (!location) {
-      throw new Error('Growing location not found');
+      throw new NotFoundError('Growing location not found');
     }
 
     if (data.name && data.name !== location.name) {
       const existing = await growingLocationRepository.findByName(data.name);
       if (existing) {
-        throw new Error('Location with this name already exists');
+        throw new ConflictError('Location with this name already exists');
       }
     }
 
@@ -257,13 +258,13 @@ class CropService {
   async deleteLocation(id) {
     const location = await growingLocationRepository.findById(id);
     if (!location) {
-      throw new Error('Growing location not found');
+      throw new NotFoundError('Growing location not found');
     }
 
     // Check if there are active batches
     const activeBatches = await cropBatchRepository.findActiveByLocation(id);
     if (activeBatches.length > 0) {
-      throw new Error('Cannot delete location with active crop batches');
+      throw new ConflictError('Cannot delete location with active crop batches');
     }
 
     await growingLocationRepository.delete(id);
@@ -307,7 +308,7 @@ class CropService {
   async getBatchById(id) {
     const batch = await cropBatchRepository.findByIdWithDetails(id);
     if (!batch) {
-      throw new Error('Crop batch not found');
+      throw new NotFoundError('Crop batch not found');
     }
 
     // Get related data
@@ -336,13 +337,13 @@ class CropService {
   async createBatch(data, userId) {
     const variety = await cropVarietyRepository.findByIdWithDetails(data.crop_variety_id);
     if (!variety) {
-      throw new Error('Crop variety not found');
+      throw new NotFoundError('Crop variety not found');
     }
 
     if (data.location_id) {
       const location = await growingLocationRepository.findById(data.location_id);
       if (!location) {
-        throw new Error('Growing location not found');
+        throw new NotFoundError('Growing location not found');
       }
     }
 
@@ -377,20 +378,20 @@ class CropService {
   async updateBatch(id, data) {
     const batch = await cropBatchRepository.findById(id);
     if (!batch) {
-      throw new Error('Crop batch not found');
+      throw new NotFoundError('Crop batch not found');
     }
 
     if (data.crop_variety_id && data.crop_variety_id !== batch.crop_variety_id) {
       const variety = await cropVarietyRepository.findById(data.crop_variety_id);
       if (!variety) {
-        throw new Error('Crop variety not found');
+        throw new NotFoundError('Crop variety not found');
       }
     }
 
     if (data.location_id && data.location_id !== batch.location_id) {
       const location = await growingLocationRepository.findById(data.location_id);
       if (!location) {
-        throw new Error('Growing location not found');
+        throw new NotFoundError('Growing location not found');
       }
     }
 
@@ -406,7 +407,7 @@ class CropService {
   async updateBatchStatus(id, status) {
     const batch = await cropBatchRepository.findById(id);
     if (!batch) {
-      throw new Error('Crop batch not found');
+      throw new NotFoundError('Crop batch not found');
     }
     return await cropBatchRepository.updateStatus(id, status);
   }
@@ -419,7 +420,7 @@ class CropService {
   async deleteBatch(id) {
     const batch = await cropBatchRepository.findById(id);
     if (!batch) {
-      throw new Error('Crop batch not found');
+      throw new NotFoundError('Crop batch not found');
     }
     await cropBatchRepository.delete(id);
   }
@@ -444,7 +445,7 @@ class CropService {
   async addObservation(batchId, data, userId) {
     const batch = await cropBatchRepository.findById(batchId);
     if (!batch) {
-      throw new Error('Crop batch not found');
+      throw new NotFoundError('Crop batch not found');
     }
 
     const observationData = {
@@ -473,7 +474,7 @@ class CropService {
   async deleteObservation(id) {
     const observation = await growthObservationRepository.findById(id);
     if (!observation) {
-      throw new Error('Observation not found');
+      throw new NotFoundError('Observation not found');
     }
     await growthObservationRepository.delete(id);
   }
@@ -490,7 +491,7 @@ class CropService {
   async recordHarvest(batchId, data, userId) {
     const batch = await cropBatchRepository.findById(batchId);
     if (!batch) {
-      throw new Error('Crop batch not found');
+      throw new NotFoundError('Crop batch not found');
     }
 
     const harvestData = {
@@ -545,7 +546,7 @@ class CropService {
   async deleteHarvest(id) {
     const harvest = await harvestRepository.findById(id);
     if (!harvest) {
-      throw new Error('Harvest record not found');
+      throw new NotFoundError('Harvest record not found');
     }
     await harvestRepository.delete(id);
   }
@@ -562,7 +563,7 @@ class CropService {
   async recordInputApplication(batchId, data, userId) {
     const batch = await cropBatchRepository.findById(batchId);
     if (!batch) {
-      throw new Error('Crop batch not found');
+      throw new NotFoundError('Crop batch not found');
     }
 
     const applicationData = {
@@ -600,7 +601,7 @@ class CropService {
   async deleteInputApplication(id) {
     const application = await cropInputApplicationRepository.findById(id);
     if (!application) {
-      throw new Error('Input application not found');
+      throw new NotFoundError('Input application not found');
     }
     await cropInputApplicationRepository.delete(id);
   }
@@ -617,7 +618,7 @@ class CropService {
   async reportPestDisease(batchId, data, userId) {
     const batch = await cropBatchRepository.findById(batchId);
     if (!batch) {
-      throw new Error('Crop batch not found');
+      throw new NotFoundError('Crop batch not found');
     }
 
     const incidentData = {
@@ -658,7 +659,7 @@ class CropService {
   async updatePestDiseaseStatus(id, status, controlMeasures) {
     const record = await cropPestDiseaseRepository.findById(id);
     if (!record) {
-      throw new Error('Pest/disease record not found');
+      throw new NotFoundError('Pest/disease record not found');
     }
     return await cropPestDiseaseRepository.updateStatus(id, status, controlMeasures);
   }
@@ -688,7 +689,7 @@ class CropService {
   async deletePestDisease(id) {
     const record = await cropPestDiseaseRepository.findById(id);
     if (!record) {
-      throw new Error('Pest/disease record not found');
+      throw new NotFoundError('Pest/disease record not found');
     }
     await cropPestDiseaseRepository.delete(id);
   }
@@ -728,7 +729,7 @@ class CropService {
   async getCarePlanById(id) {
     const plan = await carePlanRepository.findWithTasks(id);
     if (!plan) {
-      throw new Error('Care plan not found');
+      throw new NotFoundError('Care plan not found');
     }
     return plan;
   }
@@ -743,7 +744,7 @@ class CropService {
     if (data.crop_variety_id) {
       const variety = await cropVarietyRepository.findById(data.crop_variety_id);
       if (!variety) {
-        throw new Error('Crop variety not found');
+        throw new NotFoundError('Crop variety not found');
       }
     }
 
@@ -767,13 +768,13 @@ class CropService {
   async updateCarePlan(id, data) {
     const plan = await carePlanRepository.findById(id);
     if (!plan) {
-      throw new Error('Care plan not found');
+      throw new NotFoundError('Care plan not found');
     }
 
     if (data.crop_variety_id && data.crop_variety_id !== plan.crop_variety_id) {
       const variety = await cropVarietyRepository.findById(data.crop_variety_id);
       if (!variety) {
-        throw new Error('Crop variety not found');
+        throw new NotFoundError('Crop variety not found');
       }
     }
 
@@ -799,7 +800,7 @@ class CropService {
   async deleteCarePlan(id) {
     const plan = await carePlanRepository.findById(id);
     if (!plan) {
-      throw new Error('Care plan not found');
+      throw new NotFoundError('Care plan not found');
     }
     await carePlanRepository.softDelete(id);
   }
@@ -824,7 +825,7 @@ class CropService {
   async addCarePlanTask(planId, data) {
     const plan = await carePlanRepository.findById(planId);
     if (!plan) {
-      throw new Error('Care plan not found');
+      throw new NotFoundError('Care plan not found');
     }
 
     const sequence = await carePlanTaskRepository.getNextSequence(planId);
@@ -847,7 +848,7 @@ class CropService {
   async updateCarePlanTask(taskId, data) {
     const task = await carePlanTaskRepository.findById(taskId);
     if (!task) {
-      throw new Error('Care plan task not found');
+      throw new NotFoundError('Care plan task not found');
     }
     return await carePlanTaskRepository.update(taskId, data);
   }
@@ -860,7 +861,7 @@ class CropService {
   async deleteCarePlanTask(taskId) {
     const task = await carePlanTaskRepository.findById(taskId);
     if (!task) {
-      throw new Error('Care plan task not found');
+      throw new NotFoundError('Care plan task not found');
     }
     await carePlanTaskRepository.softDelete(taskId);
     await carePlanTaskRepository.reorderTasks(task.plan_id);
@@ -878,16 +879,16 @@ class CropService {
   async applyCarePlanToBatch(batchId, planId, userId) {
     const batch = await cropBatchRepository.findByIdWithDetails(batchId);
     if (!batch) {
-      throw new Error('Crop batch not found');
+      throw new NotFoundError('Crop batch not found');
     }
 
     const plan = await carePlanRepository.findWithTasks(planId);
     if (!plan) {
-      throw new Error('Care plan not found');
+      throw new NotFoundError('Care plan not found');
     }
 
     if (!batch.planting_date) {
-      throw new Error('Batch must have a planting date to apply a care plan');
+      throw new ValidationError('Batch must have a planting date to apply a care plan');
     }
 
     // Deactivate any existing schedule
@@ -1016,7 +1017,7 @@ class CropService {
   async cancelBatchCareSchedule(batchId) {
     const schedule = await batchCareScheduleRepository.findActiveByBatchId(batchId);
     if (!schedule) {
-      throw new Error('No active care schedule found for this batch');
+      throw new NotFoundError('No active care schedule found for this batch');
     }
 
     await batchCareScheduleRepository.update(schedule.id, { status: 'cancelled' });
@@ -1073,11 +1074,11 @@ class CropService {
   async completeScheduledTask(taskId, userId, notes = null) {
     const task = await scheduledBatchTaskRepository.findById(taskId);
     if (!task) {
-      throw new Error('Scheduled task not found');
+      throw new NotFoundError('Scheduled task not found');
     }
 
     if (task.status === 'completed') {
-      throw new Error('Task is already completed');
+      throw new ConflictError('Task is already completed');
     }
 
     return await scheduledBatchTaskRepository.markCompleted(taskId, userId, notes);
@@ -1093,11 +1094,11 @@ class CropService {
   async skipScheduledTask(taskId, userId, reason) {
     const task = await scheduledBatchTaskRepository.findById(taskId);
     if (!task) {
-      throw new Error('Scheduled task not found');
+      throw new NotFoundError('Scheduled task not found');
     }
 
     if (task.status === 'completed' || task.status === 'skipped') {
-      throw new Error('Task is already completed or skipped');
+      throw new ConflictError('Task is already completed or skipped');
     }
 
     return await scheduledBatchTaskRepository.markSkipped(taskId, userId, reason);
@@ -1113,7 +1114,7 @@ class CropService {
   async completeScheduledTaskWithInput(taskId, inputData, userId) {
     const task = await scheduledBatchTaskRepository.findById(taskId);
     if (!task) {
-      throw new Error('Scheduled task not found');
+      throw new NotFoundError('Scheduled task not found');
     }
 
     // Record the input application

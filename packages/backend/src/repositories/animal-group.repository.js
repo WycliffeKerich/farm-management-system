@@ -1,4 +1,5 @@
 const BaseRepository = require('./base.repository');
+const { NotFoundError, ValidationError } = require('../utils/errors');
 
 /**
  * Repository for animal_groups table operations (flock/herd tracking)
@@ -200,14 +201,14 @@ class AnimalGroupRepository extends BaseRepository {
     // Get current group
     const group = await this.findById(id);
     if (!group) {
-      throw new Error('Group not found');
+      throw new NotFoundError('Group not found');
     }
 
     const currentQuantity = group.current_quantity || group.quantity;
     const newQuantity = currentQuantity + adjustment;
 
     if (newQuantity < 0) {
-      throw new Error('Cannot reduce quantity below zero');
+      throw new ValidationError('Cannot reduce quantity below zero');
     }
 
     // Update group quantity

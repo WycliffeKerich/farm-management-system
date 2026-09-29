@@ -1,4 +1,5 @@
 const BaseRepository = require('./base.repository');
+const { ValidationError } = require('../utils/errors');
 
 /**
  * Repository for animal_feed_records table operations
@@ -344,7 +345,7 @@ class AnimalFeedRecordRepository extends BaseRepository {
    */
   async getAverageDailyCost(animalId = null, groupId = null, days = 30) {
     if (!animalId && !groupId) {
-      throw new Error('Either animalId or groupId must be provided');
+      throw new ValidationError('Either animalId or groupId must be provided');
     }
 
     const condition = animalId ? 'animal_id = $1' : 'animal_group_id = $1';

@@ -221,7 +221,7 @@ class AnimalProductionRepository {
     const values = [];
     const placeholders = [];
 
-    columns.forEach((col, i) => {
+    columns.forEach((col) => {
       if (data[col] !== undefined) {
         values.push(data[col]);
         placeholders.push(`$${values.length}`);

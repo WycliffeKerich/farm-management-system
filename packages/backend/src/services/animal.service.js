@@ -14,6 +14,7 @@ const animalFeedRecordRepository = require('../repositories/animal-feed-record.r
 const breedingRecordRepository = require('../repositories/breeding-record.repository');
 const animalSaleRepository = require('../repositories/animal-sale.repository');
 const incubationRecordRepository = require('../repositories/incubation-record.repository');
+const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
 
 /**
  * Service for animal management operations
@@ -37,7 +38,7 @@ class AnimalService {
   async getAnimalTypeById(id) {
     const animalType = await animalTypeRepository.findByIdWithBreeds(id);
     if (!animalType) {
-      throw new Error('Animal type not found');
+      throw new NotFoundError('Animal type not found');
     }
     return animalType;
   }
@@ -50,7 +51,7 @@ class AnimalService {
   async createAnimalType(data) {
     const existing = await animalTypeRepository.findByName(data.name);
     if (existing) {
-      throw new Error('Animal type with this name already exists');
+      throw new ConflictError('Animal type with this name already exists');
     }
     return await animalTypeRepository.create(data);
   }
@@ -64,13 +65,13 @@ class AnimalService {
   async updateAnimalType(id, data) {
     const animalType = await animalTypeRepository.findById(id);
     if (!animalType) {
-      throw new Error('Animal type not found');
+      throw new NotFoundError('Animal type not found');
     }
 
     if (data.name && data.name !== animalType.name) {
       const existing = await animalTypeRepository.findByName(data.name);
       if (existing) {
-        throw new Error('Animal type with this name already exists');
+        throw new ConflictError('Animal type with this name already exists');
       }
     }
 
@@ -85,7 +86,7 @@ class AnimalService {
   async deleteAnimalType(id) {
     const animalType = await animalTypeRepository.findById(id);
     if (!animalType) {
-      throw new Error('Animal type not found');
+      throw new NotFoundError('Animal type not found');
     }
     await animalTypeRepository.softDelete(id);
   }
@@ -138,7 +139,7 @@ class AnimalService {
   async getBreedById(id) {
     const breed = await animalBreedRepository.findByIdWithDetails(id);
     if (!breed) {
-      throw new Error('Animal breed not found');
+      throw new NotFoundError('Animal breed not found');
     }
     return breed;
   }
@@ -151,12 +152,12 @@ class AnimalService {
   async createBreed(data) {
     const animalType = await animalTypeRepository.findById(data.animal_type_id);
     if (!animalType) {
-      throw new Error('Animal type not found');
+      throw new NotFoundError('Animal type not found');
     }
 
     const existing = await animalBreedRepository.findByNameAndType(data.name, data.animal_type_id);
     if (existing) {
-      throw new Error('Breed with this name already exists for this animal type');
+      throw new ConflictError('Breed with this name already exists for this animal type');
     }
 
     return await animalBreedRepository.create(data);
@@ -171,7 +172,7 @@ class AnimalService {
   async updateBreed(id, data) {
     const breed = await animalBreedRepository.findById(id);
     if (!breed) {
-      throw new Error('Animal breed not found');
+      throw new NotFoundError('Animal breed not found');
     }
 
     if (data.name && (data.name !== breed.name || data.animal_type_id !== breed.animal_type_id)) {
@@ -180,7 +181,7 @@ class AnimalService {
         data.animal_type_id || breed.animal_type_id
       );
       if (existing && existing.id !== id) {
-        throw new Error('Breed with this name already exists for this animal type');
+        throw new ConflictError('Breed with this name already exists for this animal type');
       }
     }
 
@@ -195,7 +196,7 @@ class AnimalService {
   async deleteBreed(id) {
     const breed = await animalBreedRepository.findById(id);
     if (!breed) {
-      throw new Error('Animal breed not found');
+      throw new NotFoundError('Animal breed not found');
     }
     await animalBreedRepository.softDelete(id);
   }
@@ -226,7 +227,7 @@ class AnimalService {
   async getHousingById(id) {
     const housing = await animalHousingRepository.getAvailability(id);
     if (!housing) {
-      throw new Error('Animal housing not found');
+      throw new NotFoundError('Animal housing not found');
     }
     return housing;
   }
@@ -239,7 +240,7 @@ class AnimalService {
   async createHousing(data) {
     const existing = await animalHousingRepository.findByName(data.name);
     if (existing) {
-      throw new Error('Housing with this name already exists');
+      throw new ConflictError('Housing with this name already exists');
     }
     return await animalHousingRepository.create(data);
   }
@@ -253,13 +254,13 @@ class AnimalService {
   async updateHousing(id, data) {
     const housing = await animalHousingRepository.findById(id);
     if (!housing) {
-      throw new Error('Animal housing not found');
+      throw new NotFoundError('Animal housing not found');
     }
 
     if (data.name && data.name !== housing.name) {
       const existing = await animalHousingRepository.findByName(data.name);
       if (existing) {
-        throw new Error('Housing with this name already exists');
+        throw new ConflictError('Housing with this name already exists');
       }
     }
 
@@ -274,11 +275,11 @@ class AnimalService {
   async deleteHousing(id) {
     const housing = await animalHousingRepository.getAvailability(id);
     if (!housing) {
-      throw new Error('Animal housing not found');
+      throw new NotFoundError('Animal housing not found');
     }
 
     if (housing.total_occupancy > 0) {
-      throw new Error('Cannot delete housing with animals');
+      throw new ConflictError('Cannot delete housing with animals');
     }
 
     await animalHousingRepository.softDelete(id);
@@ -322,7 +323,7 @@ class AnimalService {
   async getAnimalById(id) {
     const animal = await animalRepository.findByIdWithDetails(id);
     if (!animal) {
-      throw new Error('Animal not found');
+      throw new NotFoundError('Animal not found');
     }
     return animal;
   }
@@ -336,13 +337,13 @@ class AnimalService {
   async createAnimal(data, userId) {
     const breed = await animalBreedRepository.findByIdWithDetails(data.animal_breed_id);
     if (!breed) {
-      throw new Error('Animal breed not found');
+      throw new NotFoundError('Animal breed not found');
     }
 
     if (data.housing_id) {
       const housing = await animalHousingRepository.findById(data.housing_id);
       if (!housing) {
-        throw new Error('Animal housing not found');
+        throw new NotFoundError('Animal housing not found');
       }
     }
 
@@ -352,7 +353,7 @@ class AnimalService {
     // Check for duplicate tag
     const existingTag = await animalRepository.findByTagNumber(tagNumber);
     if (existingTag) {
-      throw new Error('An animal with this tag number already exists');
+      throw new ConflictError('An animal with this tag number already exists');
     }
 
     const animalData = {
@@ -374,27 +375,27 @@ class AnimalService {
   async updateAnimal(id, data) {
     const animal = await animalRepository.findById(id);
     if (!animal) {
-      throw new Error('Animal not found');
+      throw new NotFoundError('Animal not found');
     }
 
     if (data.tag_number && data.tag_number !== animal.tag_number) {
       const existing = await animalRepository.findByTagNumber(data.tag_number);
       if (existing) {
-        throw new Error('An animal with this tag number already exists');
+        throw new ConflictError('An animal with this tag number already exists');
       }
     }
 
     if (data.animal_breed_id && data.animal_breed_id !== animal.animal_breed_id) {
       const breed = await animalBreedRepository.findById(data.animal_breed_id);
       if (!breed) {
-        throw new Error('Animal breed not found');
+        throw new NotFoundError('Animal breed not found');
       }
     }
 
     if (data.housing_id && data.housing_id !== animal.housing_id) {
       const housing = await animalHousingRepository.findById(data.housing_id);
       if (!housing) {
-        throw new Error('Animal housing not found');
+        throw new NotFoundError('Animal housing not found');
       }
     }
 
@@ -411,7 +412,7 @@ class AnimalService {
   async updateAnimalStatus(id, status, statusDate = new Date()) {
     const animal = await animalRepository.findById(id);
     if (!animal) {
-      throw new Error('Animal not found');
+      throw new NotFoundError('Animal not found');
     }
     return await animalRepository.updateStatus(id, status, statusDate);
   }
@@ -425,10 +426,10 @@ class AnimalService {
   async recordAnimalSale(id, saleDate = new Date()) {
     const animal = await animalRepository.findById(id);
     if (!animal) {
-      throw new Error('Animal not found');
+      throw new NotFoundError('Animal not found');
     }
     if (animal.status !== 'active') {
-      throw new Error('Can only sell active animals');
+      throw new ConflictError('Can only sell active animals');
     }
     return await animalRepository.recordSale(id, saleDate);
   }
@@ -441,7 +442,7 @@ class AnimalService {
   async deleteAnimal(id) {
     const animal = await animalRepository.findById(id);
     if (!animal) {
-      throw new Error('Animal not found');
+      throw new NotFoundError('Animal not found');
     }
     await animalRepository.softDelete(id);
   }
@@ -503,7 +504,7 @@ class AnimalService {
   async getGroupById(id) {
     const group = await animalGroupRepository.findByIdWithDetails(id);
     if (!group) {
-      throw new Error('Animal group not found');
+      throw new NotFoundError('Animal group not found');
     }
 
     // Get adjustment history
@@ -522,13 +523,13 @@ class AnimalService {
   async createGroup(data, userId) {
     const breed = await animalBreedRepository.findByIdWithDetails(data.animal_breed_id);
     if (!breed) {
-      throw new Error('Animal breed not found');
+      throw new NotFoundError('Animal breed not found');
     }
 
     if (data.housing_id) {
       const housing = await animalHousingRepository.findById(data.housing_id);
       if (!housing) {
-        throw new Error('Animal housing not found');
+        throw new NotFoundError('Animal housing not found');
       }
     }
 
@@ -539,7 +540,7 @@ class AnimalService {
     if (groupCode) {
       const existingCode = await animalGroupRepository.findByGroupCode(groupCode);
       if (existingCode) {
-        throw new Error('A group with this code already exists');
+        throw new ConflictError('A group with this code already exists');
       }
     }
 
@@ -564,13 +565,13 @@ class AnimalService {
   async updateGroup(id, data) {
     const group = await animalGroupRepository.findById(id);
     if (!group) {
-      throw new Error('Animal group not found');
+      throw new NotFoundError('Animal group not found');
     }
 
     if (data.group_code && data.group_code !== group.group_code) {
       const existing = await animalGroupRepository.findByGroupCode(data.group_code);
       if (existing) {
-        throw new Error('A group with this code already exists');
+        throw new ConflictError('A group with this code already exists');
       }
     }
 
@@ -587,7 +588,7 @@ class AnimalService {
   async recordGroupAddition(groupId, data, userId) {
     const group = await animalGroupRepository.findById(groupId);
     if (!group) {
-      throw new Error('Animal group not found');
+      throw new NotFoundError('Animal group not found');
     }
 
     return await animalGroupRepository.recordAddition(
@@ -615,12 +616,12 @@ class AnimalService {
   async recordGroupRemoval(groupId, data, userId) {
     const group = await animalGroupRepository.findById(groupId);
     if (!group) {
-      throw new Error('Animal group not found');
+      throw new NotFoundError('Animal group not found');
     }
 
     const currentQuantity = group.current_quantity || group.quantity;
     if (data.quantity > currentQuantity) {
-      throw new Error('Cannot remove more animals than currently in group');
+      throw new ValidationError('Cannot remove more animals than currently in group');
     }
 
     return await animalGroupRepository.recordRemoval(
@@ -655,7 +656,7 @@ class AnimalService {
   async closeGroup(id) {
     const group = await animalGroupRepository.findById(id);
     if (!group) {
-      throw new Error('Animal group not found');
+      throw new NotFoundError('Animal group not found');
     }
     return await animalGroupRepository.closeGroup(id);
   }
@@ -668,7 +669,7 @@ class AnimalService {
   async deleteGroup(id) {
     const group = await animalGroupRepository.findById(id);
     if (!group) {
-      throw new Error('Animal group not found');
+      throw new NotFoundError('Animal group not found');
     }
     await animalGroupRepository.softDelete(id);
   }
@@ -693,11 +694,11 @@ class AnimalService {
   async recordAnimalDeath(animalId, data, userId) {
     const animal = await animalRepository.findById(animalId);
     if (!animal) {
-      throw new Error('Animal not found');
+      throw new NotFoundError('Animal not found');
     }
 
     if (animal.status === 'deceased') {
-      throw new Error('Animal is already marked as deceased');
+      throw new ConflictError('Animal is already marked as deceased');
     }
 
     const deathData = {
@@ -721,12 +722,12 @@ class AnimalService {
   async recordGroupDeaths(groupId, data, userId) {
     const group = await animalGroupRepository.findById(groupId);
     if (!group) {
-      throw new Error('Animal group not found');
+      throw new NotFoundError('Animal group not found');
     }
 
     const currentQuantity = group.current_quantity || group.quantity;
     if (data.quantity > currentQuantity) {
-      throw new Error('Cannot record more deaths than animals in group');
+      throw new ValidationError('Cannot record more deaths than animals in group');
     }
 
     const deathData = {
@@ -756,7 +757,7 @@ class AnimalService {
   async getDeathById(id) {
     const death = await animalDeathRepository.findByIdWithDetails(id);
     if (!death) {
-      throw new Error('Death record not found');
+      throw new NotFoundError('Death record not found');
     }
     return death;
   }
@@ -825,7 +826,7 @@ class AnimalService {
   async updateDeath(id, data) {
     const death = await animalDeathRepository.findById(id);
     if (!death) {
-      throw new Error('Death record not found');
+      throw new NotFoundError('Death record not found');
     }
     return await animalDeathRepository.update(id, data);
   }
@@ -838,7 +839,7 @@ class AnimalService {
   async deleteDeath(id) {
     const death = await animalDeathRepository.findById(id);
     if (!death) {
-      throw new Error('Death record not found');
+      throw new NotFoundError('Death record not found');
     }
     await animalDeathRepository.softDelete(id);
   }
@@ -896,7 +897,7 @@ class AnimalService {
   async getCarePlanById(id) {
     const plan = await animalCarePlanRepository.findWithTasks(id);
     if (!plan) {
-      throw new Error('Care plan not found');
+      throw new NotFoundError('Care plan not found');
     }
     return plan;
   }
@@ -911,14 +912,14 @@ class AnimalService {
     if (data.animal_type_id) {
       const animalType = await animalTypeRepository.findById(data.animal_type_id);
       if (!animalType) {
-        throw new Error('Animal type not found');
+        throw new NotFoundError('Animal type not found');
       }
     }
 
     if (data.animal_breed_id) {
       const breed = await animalBreedRepository.findById(data.animal_breed_id);
       if (!breed) {
-        throw new Error('Animal breed not found');
+        throw new NotFoundError('Animal breed not found');
       }
     }
 
@@ -942,7 +943,7 @@ class AnimalService {
   async updateCarePlan(id, data) {
     const plan = await animalCarePlanRepository.findById(id);
     if (!plan) {
-      throw new Error('Care plan not found');
+      throw new NotFoundError('Care plan not found');
     }
 
     return await animalCarePlanRepository.update(id, data);
@@ -967,7 +968,7 @@ class AnimalService {
   async deleteCarePlan(id) {
     const plan = await animalCarePlanRepository.findById(id);
     if (!plan) {
-      throw new Error('Care plan not found');
+      throw new NotFoundError('Care plan not found');
     }
     await animalCarePlanRepository.softDelete(id);
   }
@@ -992,7 +993,7 @@ class AnimalService {
   async addCarePlanTask(planId, data) {
     const plan = await animalCarePlanRepository.findById(planId);
     if (!plan) {
-      throw new Error('Care plan not found');
+      throw new NotFoundError('Care plan not found');
     }
 
     const sequence = await animalCarePlanTaskRepository.getNextSequence(planId);
@@ -1015,7 +1016,7 @@ class AnimalService {
   async updateCarePlanTask(taskId, data) {
     const task = await animalCarePlanTaskRepository.findById(taskId);
     if (!task) {
-      throw new Error('Care plan task not found');
+      throw new NotFoundError('Care plan task not found');
     }
     return await animalCarePlanTaskRepository.update(taskId, data);
   }
@@ -1028,7 +1029,7 @@ class AnimalService {
   async deleteCarePlanTask(taskId) {
     const task = await animalCarePlanTaskRepository.findById(taskId);
     if (!task) {
-      throw new Error('Care plan task not found');
+      throw new NotFoundError('Care plan task not found');
     }
     await animalCarePlanTaskRepository.softDelete(taskId);
     await animalCarePlanTaskRepository.reorderTasks(task.plan_id);
@@ -1047,16 +1048,16 @@ class AnimalService {
   async applyCarePlanToAnimal(animalId, planId, startDate, userId) {
     const animal = await animalRepository.findByIdWithDetails(animalId);
     if (!animal) {
-      throw new Error('Animal not found');
+      throw new NotFoundError('Animal not found');
     }
 
     const plan = await animalCarePlanRepository.findWithTasks(planId);
     if (!plan) {
-      throw new Error('Care plan not found');
+      throw new NotFoundError('Care plan not found');
     }
 
     if (plan.applies_to === 'flock') {
-      throw new Error('This care plan is only applicable to flocks/groups');
+      throw new ValidationError('This care plan is only applicable to flocks/groups');
     }
 
     // Deactivate any existing schedule for this plan
@@ -1096,16 +1097,16 @@ class AnimalService {
   async applyCarePlanToGroup(groupId, planId, startDate, userId) {
     const group = await animalGroupRepository.findByIdWithDetails(groupId);
     if (!group) {
-      throw new Error('Animal group not found');
+      throw new NotFoundError('Animal group not found');
     }
 
     const plan = await animalCarePlanRepository.findWithTasks(planId);
     if (!plan) {
-      throw new Error('Care plan not found');
+      throw new NotFoundError('Care plan not found');
     }
 
     if (plan.applies_to === 'individual') {
-      throw new Error('This care plan is only applicable to individual animals');
+      throw new ValidationError('This care plan is only applicable to individual animals');
     }
 
     // Deactivate any existing schedule for this plan
@@ -1262,7 +1263,7 @@ class AnimalService {
   async cancelCareSchedule(scheduleId) {
     const schedule = await animalCareScheduleRepository.findById(scheduleId);
     if (!schedule) {
-      throw new Error('Care schedule not found');
+      throw new NotFoundError('Care schedule not found');
     }
 
     await animalCareScheduleRepository.update(scheduleId, { status: 'cancelled' });
@@ -1311,11 +1312,11 @@ class AnimalService {
   async completeScheduledTask(taskId, userId, notes = null, quantityTreated = null) {
     const task = await scheduledAnimalTaskRepository.findById(taskId);
     if (!task) {
-      throw new Error('Scheduled task not found');
+      throw new NotFoundError('Scheduled task not found');
     }
 
     if (task.status === 'completed') {
-      throw new Error('Task is already completed');
+      throw new ConflictError('Task is already completed');
     }
 
     return await scheduledAnimalTaskRepository.markCompleted(taskId, userId, notes, quantityTreated);
@@ -1332,7 +1333,7 @@ class AnimalService {
   async partiallyCompleteScheduledTask(taskId, userId, quantityTreated, notes = null) {
     const task = await scheduledAnimalTaskRepository.findById(taskId);
     if (!task) {
-      throw new Error('Scheduled task not found');
+      throw new NotFoundError('Scheduled task not found');
     }
 
     return await scheduledAnimalTaskRepository.markPartiallyCompleted(taskId, userId, quantityTreated, notes);
@@ -1348,11 +1349,11 @@ class AnimalService {
   async skipScheduledTask(taskId, userId, reason) {
     const task = await scheduledAnimalTaskRepository.findById(taskId);
     if (!task) {
-      throw new Error('Scheduled task not found');
+      throw new NotFoundError('Scheduled task not found');
     }
 
     if (task.status === 'completed' || task.status === 'skipped') {
-      throw new Error('Task is already completed or skipped');
+      throw new ConflictError('Task is already completed or skipped');
     }
 
     return await scheduledAnimalTaskRepository.markSkipped(taskId, userId, reason);
@@ -1418,7 +1419,7 @@ class AnimalService {
   async getHealthRecordById(id) {
     const record = await animalHealthRecordRepository.findByIdWithDetails(id);
     if (!record) {
-      throw new Error('Health record not found');
+      throw new NotFoundError('Health record not found');
     }
     return record;
   }
@@ -1448,25 +1449,25 @@ class AnimalService {
    */
   async createHealthRecord(data) {
     if (!data.animal_id && !data.animal_group_id) {
-      throw new Error('Either animal_id or animal_group_id is required');
+      throw new ValidationError('Either animal_id or animal_group_id is required');
     }
 
     if (data.animal_id && data.animal_group_id) {
-      throw new Error('Cannot specify both animal_id and animal_group_id');
+      throw new ValidationError('Cannot specify both animal_id and animal_group_id');
     }
 
     // Verify animal or group exists
     if (data.animal_id) {
       const animal = await animalRepository.findById(data.animal_id);
       if (!animal) {
-        throw new Error('Animal not found');
+        throw new NotFoundError('Animal not found');
       }
     }
 
     if (data.animal_group_id) {
       const group = await animalGroupRepository.findById(data.animal_group_id);
       if (!group) {
-        throw new Error('Animal group not found');
+        throw new NotFoundError('Animal group not found');
       }
     }
 
@@ -1482,7 +1483,7 @@ class AnimalService {
   async updateHealthRecord(id, data) {
     const record = await animalHealthRecordRepository.findById(id);
     if (!record) {
-      throw new Error('Health record not found');
+      throw new NotFoundError('Health record not found');
     }
     return await animalHealthRecordRepository.update(id, data);
   }
@@ -1495,7 +1496,7 @@ class AnimalService {
   async deleteHealthRecord(id) {
     const record = await animalHealthRecordRepository.findById(id);
     if (!record) {
-      throw new Error('Health record not found');
+      throw new NotFoundError('Health record not found');
     }
     await animalHealthRecordRepository.softDelete(id);
   }
@@ -1547,7 +1548,7 @@ class AnimalService {
   async getDiseaseTreatmentById(id) {
     const record = await animalDiseaseTreatmentRepository.findByIdWithDetails(id);
     if (!record) {
-      throw new Error('Disease/treatment record not found');
+      throw new NotFoundError('Disease/treatment record not found');
     }
     return record;
   }
@@ -1577,25 +1578,25 @@ class AnimalService {
    */
   async createDiseaseTreatment(data) {
     if (!data.animal_id && !data.animal_group_id) {
-      throw new Error('Either animal_id or animal_group_id is required');
+      throw new ValidationError('Either animal_id or animal_group_id is required');
     }
 
     if (data.animal_id && data.animal_group_id) {
-      throw new Error('Cannot specify both animal_id and animal_group_id');
+      throw new ValidationError('Cannot specify both animal_id and animal_group_id');
     }
 
     // Verify animal or group exists
     if (data.animal_id) {
       const animal = await animalRepository.findById(data.animal_id);
       if (!animal) {
-        throw new Error('Animal not found');
+        throw new NotFoundError('Animal not found');
       }
     }
 
     if (data.animal_group_id) {
       const group = await animalGroupRepository.findById(data.animal_group_id);
       if (!group) {
-        throw new Error('Animal group not found');
+        throw new NotFoundError('Animal group not found');
       }
     }
 
@@ -1611,7 +1612,7 @@ class AnimalService {
   async updateDiseaseTreatment(id, data) {
     const record = await animalDiseaseTreatmentRepository.findById(id);
     if (!record) {
-      throw new Error('Disease/treatment record not found');
+      throw new NotFoundError('Disease/treatment record not found');
     }
     return await animalDiseaseTreatmentRepository.update(id, data);
   }
@@ -1624,7 +1625,7 @@ class AnimalService {
   async deleteDiseaseTreatment(id) {
     const record = await animalDiseaseTreatmentRepository.findById(id);
     if (!record) {
-      throw new Error('Disease/treatment record not found');
+      throw new NotFoundError('Disease/treatment record not found');
     }
     await animalDiseaseTreatmentRepository.softDelete(id);
   }
@@ -1693,7 +1694,7 @@ class AnimalService {
   async getFeedRecordById(id) {
     const record = await animalFeedRecordRepository.findByIdWithDetails(id);
     if (!record) {
-      throw new Error('Feed record not found');
+      throw new NotFoundError('Feed record not found');
     }
     return record;
   }
@@ -1723,25 +1724,25 @@ class AnimalService {
    */
   async createFeedRecord(data) {
     if (!data.animal_id && !data.animal_group_id) {
-      throw new Error('Either animal_id or animal_group_id is required');
+      throw new ValidationError('Either animal_id or animal_group_id is required');
     }
 
     if (data.animal_id && data.animal_group_id) {
-      throw new Error('Cannot specify both animal_id and animal_group_id');
+      throw new ValidationError('Cannot specify both animal_id and animal_group_id');
     }
 
     // Verify animal or group exists
     if (data.animal_id) {
       const animal = await animalRepository.findById(data.animal_id);
       if (!animal) {
-        throw new Error('Animal not found');
+        throw new NotFoundError('Animal not found');
       }
     }
 
     if (data.animal_group_id) {
       const group = await animalGroupRepository.findById(data.animal_group_id);
       if (!group) {
-        throw new Error('Animal group not found');
+        throw new NotFoundError('Animal group not found');
       }
     }
 
@@ -1762,7 +1763,7 @@ class AnimalService {
   async updateFeedRecord(id, data) {
     const record = await animalFeedRecordRepository.findById(id);
     if (!record) {
-      throw new Error('Feed record not found');
+      throw new NotFoundError('Feed record not found');
     }
 
     // Recalculate total_cost if quantity or cost_per_unit changed
@@ -1783,7 +1784,7 @@ class AnimalService {
   async deleteFeedRecord(id) {
     const record = await animalFeedRecordRepository.findById(id);
     if (!record) {
-      throw new Error('Feed record not found');
+      throw new NotFoundError('Feed record not found');
     }
     await animalFeedRecordRepository.softDelete(id);
   }
@@ -1854,7 +1855,7 @@ class AnimalService {
   async getBreedingRecordById(id) {
     const record = await breedingRecordRepository.findByIdWithDetails(id);
     if (!record) {
-      throw new Error('Breeding record not found');
+      throw new NotFoundError('Breeding record not found');
     }
     return record;
   }
@@ -1875,18 +1876,18 @@ class AnimalService {
    */
   async createBreedingRecord(data) {
     if (!data.male_animal_id || !data.female_animal_id) {
-      throw new Error('Both male_animal_id and female_animal_id are required');
+      throw new ValidationError('Both male_animal_id and female_animal_id are required');
     }
 
     // Verify both animals exist
     const maleAnimal = await animalRepository.findById(data.male_animal_id);
     if (!maleAnimal) {
-      throw new Error('Male animal not found');
+      throw new NotFoundError('Male animal not found');
     }
 
     const femaleAnimal = await animalRepository.findById(data.female_animal_id);
     if (!femaleAnimal) {
-      throw new Error('Female animal not found');
+      throw new NotFoundError('Female animal not found');
     }
 
     // Verify they are the same type
@@ -1895,16 +1896,16 @@ class AnimalService {
       const femaleBreed = await animalBreedRepository.findById(femaleAnimal.animal_breed_id);
 
       if (maleBreed.animal_type_id !== femaleBreed.animal_type_id) {
-        throw new Error('Animals must be of the same type for breeding');
+        throw new ValidationError('Animals must be of the same type for breeding');
       }
     }
 
     // Verify gender
     if (maleAnimal.gender !== 'male') {
-      throw new Error('First animal must be male');
+      throw new ValidationError('First animal must be male');
     }
     if (femaleAnimal.gender !== 'female') {
-      throw new Error('Second animal must be female');
+      throw new ValidationError('Second animal must be female');
     }
 
     return await breedingRecordRepository.create(data);
@@ -1919,7 +1920,7 @@ class AnimalService {
   async updateBreedingRecord(id, data) {
     const record = await breedingRecordRepository.findById(id);
     if (!record) {
-      throw new Error('Breeding record not found');
+      throw new NotFoundError('Breeding record not found');
     }
 
     // If adding offspring to a group
@@ -1927,7 +1928,7 @@ class AnimalService {
       // Verify the group exists
       const group = await animalGroupRepository.findById(data.target_group_id);
       if (!group) {
-        throw new Error('Target group not found');
+        throw new NotFoundError('Target group not found');
       }
 
       // Add offspring to the group
@@ -1960,7 +1961,7 @@ class AnimalService {
   async deleteBreedingRecord(id) {
     const record = await breedingRecordRepository.findById(id);
     if (!record) {
-      throw new Error('Breeding record not found');
+      throw new NotFoundError('Breeding record not found');
     }
     await breedingRecordRepository.softDelete(id);
   }
@@ -2031,7 +2032,7 @@ class AnimalService {
   async getAnimalSaleById(id) {
     const sale = await animalSaleRepository.findByIdWithDetails(id);
     if (!sale) {
-      throw new Error('Sale record not found');
+      throw new NotFoundError('Sale record not found');
     }
     return sale;
   }
@@ -2044,21 +2045,21 @@ class AnimalService {
   async createAnimalSale(data) {
     // Validate that either animal_id or animal_group_id is provided in reference
     if (!data.reference_type || !data.reference_id) {
-      throw new Error('Reference type and ID are required');
+      throw new ValidationError('Reference type and ID are required');
     }
 
     if (!['animal', 'animal_group'].includes(data.reference_type)) {
-      throw new Error('Reference type must be animal or animal_group');
+      throw new ValidationError('Reference type must be animal or animal_group');
     }
 
     // Verify the animal or group exists and update status
     if (data.reference_type === 'animal') {
       const animal = await animalRepository.findById(data.reference_id);
       if (!animal) {
-        throw new Error('Animal not found');
+        throw new NotFoundError('Animal not found');
       }
       if (animal.status !== 'active') {
-        throw new Error('Can only sell active animals');
+        throw new ConflictError('Can only sell active animals');
       }
 
       // Update animal status to sold
@@ -2066,10 +2067,10 @@ class AnimalService {
     } else if (data.reference_type === 'animal_group') {
       const group = await animalGroupRepository.findById(data.reference_id);
       if (!group) {
-        throw new Error('Animal group not found');
+        throw new NotFoundError('Animal group not found');
       }
       if (group.status === 'closed') {
-        throw new Error('Cannot sell from a closed group');
+        throw new ConflictError('Cannot sell from a closed group');
       }
 
       // Record the sale as a group removal
@@ -2107,7 +2108,7 @@ class AnimalService {
   async updateAnimalSale(id, data) {
     const sale = await animalSaleRepository.findById(id);
     if (!sale) {
-      throw new Error('Sale record not found');
+      throw new NotFoundError('Sale record not found');
     }
 
     // Recalculate total if quantity or unit_price changed
@@ -2128,7 +2129,7 @@ class AnimalService {
   async deleteAnimalSale(id) {
     const sale = await animalSaleRepository.findById(id);
     if (!sale) {
-      throw new Error('Sale record not found');
+      throw new NotFoundError('Sale record not found');
     }
 
     // Note: This doesn't reverse the animal status change
@@ -2210,7 +2211,7 @@ class AnimalService {
   async getIncubationRecordById(id) {
     const record = await incubationRecordRepository.findByIdWithDetails(id);
     if (!record) {
-      throw new Error('Incubation record not found');
+      throw new NotFoundError('Incubation record not found');
     }
     return record;
   }
@@ -2239,7 +2240,7 @@ class AnimalService {
     if (data.animal_breed_id) {
       const breed = await animalBreedRepository.findById(data.animal_breed_id);
       if (!breed) {
-        throw new Error('Animal breed not found');
+        throw new NotFoundError('Animal breed not found');
       }
     }
 
@@ -2247,7 +2248,7 @@ class AnimalService {
     if (data.animal_group_id) {
       const group = await animalGroupRepository.findById(data.animal_group_id);
       if (!group) {
-        throw new Error('Source animal group not found');
+        throw new NotFoundError('Source animal group not found');
       }
     }
 
@@ -2255,7 +2256,7 @@ class AnimalService {
     if (data.target_group_id) {
       const targetGroup = await animalGroupRepository.findById(data.target_group_id);
       if (!targetGroup) {
-        throw new Error('Target group not found');
+        throw new NotFoundError('Target group not found');
       }
     }
 
@@ -2271,7 +2272,7 @@ class AnimalService {
   async updateIncubationRecord(id, data) {
     const record = await incubationRecordRepository.findById(id);
     if (!record) {
-      throw new Error('Incubation record not found');
+      throw new NotFoundError('Incubation record not found');
     }
 
     // If hatching is being recorded and target group is specified
@@ -2279,7 +2280,7 @@ class AnimalService {
       // Verify the target group exists
       const targetGroup = await animalGroupRepository.findById(data.target_group_id);
       if (!targetGroup) {
-        throw new Error('Target group not found');
+        throw new NotFoundError('Target group not found');
       }
 
       // Add hatched chicks to the target group
@@ -2318,7 +2319,7 @@ class AnimalService {
   async deleteIncubationRecord(id) {
     const record = await incubationRecordRepository.findById(id);
     if (!record) {
-      throw new Error('Incubation record not found');
+      throw new NotFoundError('Incubation record not found');
     }
     await incubationRecordRepository.softDelete(id);
   }
