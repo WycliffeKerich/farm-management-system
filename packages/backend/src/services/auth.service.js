@@ -103,7 +103,7 @@ class AuthService {
       throw new AuthenticationError('Invalid credentials', 'INVALID_CREDENTIALS');
     }
 
-    if (user.locked_until && new Date(user.locked_until) > new Date()) {
+    if (user.is_locked) {
       throw new AuthenticationError(
         'Account temporarily locked after too many failed attempts. Try again later.',
         'ACCOUNT_LOCKED'
@@ -159,15 +159,15 @@ class AuthService {
       }
 
       if (session.replaced_by) {
-        const usedAt = session.last_used_at ? new Date(session.last_used_at).getTime() : 0;
-        const withinGrace = Date.now() - usedAt < REFRESH_REUSE_GRACE_SECONDS * 1000;
+        const withinGrace =
+          session.seconds_since_use !== null && session.seconds_since_use < REFRESH_REUSE_GRACE_SECONDS;
         if (!withinGrace) {
           await this.sessionRepository.revokeFamily(session.family_id, t);
           return { error: 'REUSED', session };
         }
       }
 
-      if (new Date(session.expires_at) <= new Date()) return { error: 'EXPIRED' };
+      if (session.is_expired) return { error: 'EXPIRED' };
 
       const user = await this.userRepository.findById(session.user_id, t);
       if (!user || !user.is_active) {
@@ -346,7 +346,7 @@ class AuthService {
         user_id: userId,
         token_hash: hashToken(token),
         family_id: familyId,
-        expires_at: new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000),
+        ttl_days: REFRESH_TOKEN_TTL_DAYS,
         user_agent: meta.userAgent ? String(meta.userAgent).slice(0, 255) : null,
         ip_address: meta.ip ? String(meta.ip).slice(0, 64) : null,
       },

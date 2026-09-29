@@ -54,7 +54,12 @@ class UserRepository extends BaseRepository {
    * @returns {Promise<Object|null>} User or null
    */
   async findByEmail(email, t) {
-    return this.conn(t).oneOrNone('SELECT * FROM users WHERE LOWER(email) = LOWER($1) AND deleted_at IS NULL', [email]);
+    // is_locked is evaluated by the DB: locked_until is DB-local TIMESTAMP
+    return this.conn(t).oneOrNone(
+      `SELECT *, COALESCE(locked_until > CURRENT_TIMESTAMP, false) AS is_locked
+         FROM users WHERE LOWER(email) = LOWER($1) AND deleted_at IS NULL`,
+      [email]
+    );
   }
 
   /**

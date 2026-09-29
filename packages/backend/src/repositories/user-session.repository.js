@@ -14,25 +14,37 @@ class UserSessionRepository {
   }
 
   /**
-   * @param {Object} session - { user_id, token_hash, family_id, expires_at, user_agent, ip_address }
+   * Expiry is computed from the DB clock so it never depends on the app server's time zone.
+   * @param {Object} session - { user_id, token_hash, family_id, ttl_days, user_agent, ip_address }
    * @param {Object} [t] - Task/transaction
    */
   async create(session, t) {
     return this.conn(t).one(
       `INSERT INTO user_sessions (user_id, token_hash, family_id, expires_at, user_agent, ip_address)
-       VALUES ($<user_id>, $<token_hash>, $<family_id>, $<expires_at>, $<user_agent>, $<ip_address>)
+       VALUES ($<user_id>, $<token_hash>, $<family_id>, CURRENT_TIMESTAMP + make_interval(days => $<ttl_days>::int),
+               $<user_agent>, $<ip_address>)
        RETURNING *`,
       session
     );
   }
 
   /**
-   * Find a session by token hash and lock it for the rest of the transaction
+   * Find a session by token hash and lock it for the rest of the transaction.
+   * Time checks are evaluated by the DB (TIMESTAMP columns hold DB-local time):
+   * is_expired, and seconds_since_use for the reuse grace window.
    * @param {string} tokenHash
    * @param {Object} t - Transaction
    */
   async findByHashForUpdate(tokenHash, t) {
-    return t.oneOrNone('SELECT * FROM user_sessions WHERE token_hash = $1 FOR UPDATE', [tokenHash]);
+    return t.oneOrNone(
+      `SELECT *,
+              expires_at <= CURRENT_TIMESTAMP AS is_expired,
+              EXTRACT(EPOCH FROM CURRENT_TIMESTAMP - last_used_at)::float AS seconds_since_use
+         FROM user_sessions
+        WHERE token_hash = $1
+        FOR UPDATE`,
+      [tokenHash]
+    );
   }
 
   async findByHash(tokenHash, t) {
