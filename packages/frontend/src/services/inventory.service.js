@@ -4,164 +4,169 @@ import api from './api';
  * Inventory management API service
  */
 const inventoryService = {
-  // ==================== SUMMARY ====================
+    // ==================== SUMMARY ====================
 
-  getSummary() {
-    return api.get('/inventory/summary');
-  },
+    getSummary() {
+        return api.get('/inventory/summary');
+    },
 
-  // ==================== STOCK ALERTS ====================
+    // ==================== STOCK ALERTS ====================
 
-  getLowStockItems() {
-    return api.get('/inventory/low-stock');
-  },
+    getLowStockItems() {
+        return api.get('/inventory/low-stock');
+    },
 
-  getExpiringItems(days = 30) {
-    return api.get('/inventory/expiring', { params: { days } });
-  },
+    getExpiringItems(days = 30) {
+        return api.get('/inventory/expiring', { params: { days } });
+    },
 
-  // ==================== CATEGORIES ====================
+    // ==================== CATEGORIES ====================
 
-  getCategories() {
-    return api.get('/inventory/categories');
-  },
+    getCategories() {
+        return api.get('/inventory/categories');
+    },
 
-  getCategoryById(id) {
-    return api.get(`/inventory/categories/${id}`);
-  },
+    getCategoryById(id) {
+        return api.get(`/inventory/categories/${id}`);
+    },
 
-  createCategory(data) {
-    return api.post('/inventory/categories', data);
-  },
+    createCategory(data) {
+        return api.post('/inventory/categories', data);
+    },
 
-  updateCategory(id, data) {
-    return api.put(`/inventory/categories/${id}`, data);
-  },
+    updateCategory(id, data) {
+        return api.put(`/inventory/categories/${id}`, data);
+    },
 
-  deleteCategory(id) {
-    return api.delete(`/inventory/categories/${id}`);
-  },
+    deleteCategory(id) {
+        return api.delete(`/inventory/categories/${id}`);
+    },
 
-  // ==================== ITEMS ====================
+    // ==================== ITEMS ====================
 
-  getItems(params = {}) {
-    return api.get('/inventory/items', { params });
-  },
+    getItems(params = {}) {
+        return api.get('/inventory/items', { params });
+    },
 
-  getItemById(id) {
-    return api.get(`/inventory/items/${id}`);
-  },
+    getItemById(id) {
+        return api.get(`/inventory/items/${id}`);
+    },
 
-  getItemByCode(code) {
-    return api.get(`/inventory/items/code/${code}`);
-  },
+    getItemByCode(code) {
+        return api.get(`/inventory/items/code/${code}`);
+    },
 
-  createItem(data) {
-    return api.post('/inventory/items', data);
-  },
+    createItem(data) {
+        return api.post('/inventory/items', data);
+    },
 
-  updateItem(id, data) {
-    return api.put(`/inventory/items/${id}`, data);
-  },
+    updateItem(id, data) {
+        return api.put(`/inventory/items/${id}`, data);
+    },
 
-  deleteItem(id) {
-    return api.delete(`/inventory/items/${id}`);
-  },
+    deleteItem(id) {
+        return api.delete(`/inventory/items/${id}`);
+    },
 
-  // ==================== TRANSACTIONS ====================
+    // ==================== TRANSACTIONS ====================
 
-  getTransactions(params = {}) {
-    return api.get('/inventory/transactions', { params });
-  },
+    getTransactions(params = {}) {
+        return api.get('/inventory/transactions', { params });
+    },
 
-  getItemTransactions(itemId, params = {}) {
-    return api.get(`/inventory/items/${itemId}/transactions`, { params });
-  },
+    getItemTransactions(itemId, params = {}) {
+        return api.get(`/inventory/items/${itemId}/transactions`, { params });
+    },
 
-  createTransaction(data) {
-    return api.post('/inventory/transactions', data);
-  },
+    createTransaction(data) {
+        return api.post('/inventory/transactions', data);
+    },
 
-  // ==================== REPORTS ====================
+    /** Use stock from the item's batches, earliest expiry first */
+    useStock(itemId, data) {
+        return api.post(`/inventory/items/${itemId}/use`, data);
+    },
 
-  getUsageReport(itemId, dateFrom, dateTo) {
-    return api.get(`/inventory/items/${itemId}/usage-report`, {
-      params: { date_from: dateFrom, date_to: dateTo }
-    });
-  },
+    // ==================== REPORTS ====================
 
-  // ==================== UNITS OF MEASURE ====================
+    getUsageReport(itemId, dateFrom, dateTo) {
+        return api.get(`/inventory/items/${itemId}/usage-report`, {
+            params: { date_from: dateFrom, date_to: dateTo }
+        });
+    },
 
-  getUnitsOfMeasure(category = null) {
-    const params = category ? { category } : {};
-    return api.get('/inventory/units', { params });
-  },
+    // ==================== UNITS OF MEASURE ====================
 
-  getUnitCategories() {
-    return api.get('/inventory/units/categories');
-  },
+    getUnitsOfMeasure(category = null) {
+        const params = category ? { category } : {};
+        return api.get('/inventory/units', { params });
+    },
 
-  getUnitById(id) {
-    return api.get(`/inventory/units/${id}`);
-  },
+    getUnitCategories() {
+        return api.get('/inventory/units/categories');
+    },
 
-  createUnit(data) {
-    return api.post('/inventory/units', data);
-  },
+    getUnitById(id) {
+        return api.get(`/inventory/units/${id}`);
+    },
 
-  updateUnit(id, data) {
-    return api.put(`/inventory/units/${id}`, data);
-  },
+    createUnit(data) {
+        return api.post('/inventory/units', data);
+    },
 
-  deleteUnit(id) {
-    return api.delete(`/inventory/units/${id}`);
-  },
+    updateUnit(id, data) {
+        return api.put(`/inventory/units/${id}`, data);
+    },
 
-  convertUnits(quantity, fromUnitId, toUnitId) {
-    return api.post('/inventory/units/convert', {
-      quantity,
-      from_unit_id: fromUnitId,
-      to_unit_id: toUnitId
-    });
-  },
+    deleteUnit(id) {
+        return api.delete(`/inventory/units/${id}`);
+    },
 
-  // ==================== BATCHES ====================
+    convertUnits(quantity, fromUnitId, toUnitId) {
+        return api.post('/inventory/units/convert', {
+            quantity,
+            from_unit_id: fromUnitId,
+            to_unit_id: toUnitId
+        });
+    },
 
-  getBatches(params = {}) {
-    return api.get('/inventory/batches', { params });
-  },
+    // ==================== BATCHES ====================
 
-  getBatchById(id) {
-    return api.get(`/inventory/batches/${id}`);
-  },
+    getBatches(params = {}) {
+        return api.get('/inventory/batches', { params });
+    },
 
-  getItemBatches(itemId, options = {}) {
-    return api.get(`/inventory/items/${itemId}/batches`, { params: options });
-  },
+    getBatchById(id) {
+        return api.get(`/inventory/batches/${id}`);
+    },
 
-  getExpiringBatches(days = 30) {
-    return api.get('/inventory/batches/expiring', { params: { days } });
-  },
+    getItemBatches(itemId, options = {}) {
+        return api.get(`/inventory/items/${itemId}/batches`, { params: options });
+    },
 
-  getExpiredBatches() {
-    return api.get('/inventory/batches/expired');
-  },
+    getExpiringBatches(days = 30) {
+        return api.get('/inventory/batches/expiring', { params: { days } });
+    },
 
-  createBatch(data) {
-    return api.post('/inventory/batches', data);
-  },
+    getExpiredBatches() {
+        return api.get('/inventory/batches/expired');
+    },
 
-  updateBatch(id, data) {
-    return api.put(`/inventory/batches/${id}`, data);
-  },
+    createBatch(data) {
+        return api.post('/inventory/batches', data);
+    },
 
-  deleteBatch(id) {
-    return api.delete(`/inventory/batches/${id}`);
-  },
+    updateBatch(id, data) {
+        return api.put(`/inventory/batches/${id}`, data);
+    },
 
-  markExpiredBatches() {
-    return api.post('/inventory/batches/mark-expired');
-  }
+    deleteBatch(id) {
+        return api.delete(`/inventory/batches/${id}`);
+    },
+
+    markExpiredBatches() {
+        return api.post('/inventory/batches/mark-expired');
+    }
 };
 
 export default inventoryService;
