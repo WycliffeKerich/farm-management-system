@@ -338,6 +338,23 @@ describe('withdrawal holds on produce and sales', () => {
     expect((await put(`/sales/${sold.body.data.id}`, { sale_date: '2026-03-12' }, manager)).status).toBe(409);
   });
 
+  it('refuses marking an animal sold inside its meat withdrawal period, with no override', async () => {
+    const markSold = await post(`/individuals/${cow.id}/sale`, { sale_date: '2026-03-10' });
+    expect(markSold.status).toBe(409);
+    expect(markSold.body.error).toMatchObject({ code: 'WITHDRAWAL_ACTIVE', details: { safe_from: '2026-03-16' } });
+
+    const viaStatus = await request(app)
+      .patch(`${API}/individuals/${cow.id}/status`)
+      .set(owner.auth)
+      .send({ status: 'sold', status_date: '2026-03-10', override_reason: 'x' });
+    expect(viaStatus.status).toBe(409);
+    expect((await db.one('SELECT status FROM animals WHERE id = $1', [cow.id])).status).toBe('active');
+
+    const heifer = await createAnimal();
+    expect((await post(`/individuals/${heifer.id}/sale`, { sale_date: '2026-03-10' })).status).toBe(200);
+    expect((await post(`/individuals/${cow.id}/sale`, { sale_date: '2026-03-16' })).status).toBe(200);
+  });
+
   it('lists what is held on a date', async () => {
     const batch = await createBatch();
     await request(app).post(`/api/v1/crops/batches/${batch.id}/input-applications`).set(worker.auth).send({
