@@ -1,5 +1,27 @@
 const { body, param, query } = require('express-validator');
 
+// An input application names its product and unit, or takes them from an inventory item
+const requiredWithoutItem = (value, { req }) => Boolean(value) || Boolean(req.body.inventory_item_id);
+
+// Taking an input application from stock, and its pre-harvest interval
+const stockFields = [
+  body('inventory_item_id')
+    .optional({ values: 'null' })
+    .isInt({ min: 1 })
+    .withMessage('Invalid inventory item ID')
+    .toInt(),
+  body('inventory_batch_id')
+    .optional({ values: 'null' })
+    .isInt({ min: 1 })
+    .withMessage('Invalid inventory batch ID')
+    .toInt(),
+  body('pre_harvest_interval_days')
+    .optional({ values: 'null' })
+    .isInt({ min: 0, max: 3650 })
+    .withMessage('Pre-harvest interval must be between 0 and 3650 days')
+    .toInt(),
+];
+
 /**
  * Validators for crop management endpoints
  */
@@ -199,6 +221,11 @@ const cropValidators = {
       .withMessage('Unit must be at most 20 characters'),
     body('grade').optional().trim().isLength({ max: 50 }).withMessage('Grade must be at most 50 characters'),
     body('notes').optional().trim(),
+    body('override_reason')
+      .optional({ values: 'null' })
+      .trim()
+      .isLength({ max: 1000 })
+      .withMessage('Override reason must be at most 1000 characters'),
   ],
 
   // Input application validators
@@ -216,8 +243,8 @@ const cropValidators = {
       .withMessage('Invalid input type'),
     body('product_name')
       .trim()
-      .notEmpty()
-      .withMessage('Product name is required')
+      .custom(requiredWithoutItem)
+      .withMessage('Product name is required unless an inventory item is chosen')
       .isLength({ max: 255 })
       .withMessage('Product name must be at most 255 characters'),
     body('quantity')
@@ -227,10 +254,11 @@ const cropValidators = {
       .withMessage('Quantity must be a positive number'),
     body('unit')
       .trim()
-      .notEmpty()
-      .withMessage('Unit is required')
+      .custom(requiredWithoutItem)
+      .withMessage('Unit is required unless an inventory item is chosen')
       .isLength({ max: 20 })
       .withMessage('Unit must be at most 20 characters'),
+    ...stockFields,
     body('application_method')
       .optional()
       .trim()
@@ -501,6 +529,7 @@ const cropValidators = {
       .isLength({ max: 255 })
       .withMessage('Target must be at most 255 characters'),
     body('notes').optional().trim(),
+    ...stockFields,
   ],
 };
 

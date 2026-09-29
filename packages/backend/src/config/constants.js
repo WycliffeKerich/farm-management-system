@@ -119,7 +119,13 @@ module.exports = {
     ANIMAL_GROUP: 'animal_group',
     TASK: 'task',
     MANUAL: 'manual',
+    CROP_INPUT_APPLICATION: 'crop_input_application',
+    ANIMAL_FEED_RECORD: 'animal_feed_record',
+    TREATMENT_MEDICATION: 'treatment_medication',
   },
+
+  // Withdrawal periods and pre-harvest intervals: which product a hold blocks
+  WITHDRAWAL_PRODUCTS: ['milk', 'meat', 'egg'],
 
   // HTTP status codes
   HTTP_STATUS: {

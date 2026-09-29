@@ -589,6 +589,55 @@ class InventoryService {
   }
 
   /**
+   * Put back what a record took from stock, when the record is deleted. Each
+   * batch drawn from gets its share back (or unbatched stock does, if the
+   * batch has since been deleted). Running it twice returns nothing twice.
+   * @param {string} referenceType - INVENTORY_REFERENCE_TYPES value
+   * @param {number} referenceId - Record ID
+   * @param {number} userId - User recording the return
+   * @param {Object} [t] - Outer transaction to join
+   * @returns {Promise<Array>} The return ledger rows written
+   */
+  async reverseReference(referenceType, referenceId, userId, t) {
+    return (t || db).tx(async (tx) => {
+      const outstanding = await inventoryTransactionRepository.outstandingByReference(referenceType, referenceId, tx);
+      const returns = [];
+
+      for (const row of outstanding) {
+        const item = await inventoryItemRepository.findByIdForUpdate(row.item_id, tx);
+        const batch =
+          row.inventory_batch_id && (await inventoryBatchRepository.lockForItem(row.inventory_batch_id, item.id, tx));
+        if (batch) {
+          await inventoryBatchRepository.setQuantity(
+            batch.id,
+            fromHundredths(toHundredths(batch.quantity) + toHundredths(row.quantity)),
+            tx
+          );
+        }
+
+        returns.push(
+          await this.writeIncoming(
+            item,
+            row.quantity,
+            {
+              transaction_type: INVENTORY_TRANSACTION_TYPES.RETURN,
+              inventory_batch_id: batch ? batch.id : null,
+              unit_cost: row.unit_cost,
+              reference_type: referenceType,
+              reference_id: referenceId,
+              notes: batch ? `Returned to batch ${batch.batch_number}` : 'Returned: record deleted',
+            },
+            userId,
+            tx
+          )
+        );
+      }
+
+      return returns;
+    });
+  }
+
+  /**
    * Express a quantity in an item's own unit. Units convert only within one
    * family (kg ↔ g, L ↔ mL); anything else is refused rather than guessed.
    * @param {Object} item - Item row

@@ -10,10 +10,21 @@ const carePlanRepository = require('../repositories/care-plan.repository');
 const carePlanTaskRepository = require('../repositories/care-plan-task.repository');
 const batchCareScheduleRepository = require('../repositories/batch-care-schedule.repository');
 const scheduledBatchTaskRepository = require('../repositories/scheduled-batch-task.repository');
+const inventoryItemRepository = require('../repositories/inventory-item.repository');
+const inventoryService = require('./inventory.service');
+const withdrawalService = require('./withdrawal.service');
+const { db } = require('../config/database');
+const { INVENTORY_REFERENCE_TYPES } = require('../config/constants');
 const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
-const { addDays } = require('../utils/dates');
+const { addDays, toDateString } = require('../utils/dates');
 
 const ACTIVE_BATCH_STATUSES = ['planted', 'growing', 'harvesting'];
+
+/** The larger of two optional day counts, or null when neither is given */
+function longerInterval(a, b) {
+  const days = [a, b].filter((value) => value !== undefined && value !== null && value !== '').map(Number);
+  return days.length ? Math.max(...days) : null;
+}
 
 /**
  * Service for crop management operations
@@ -490,32 +501,49 @@ class CropService {
   // ==================== HARVESTS ====================
 
   /**
-   * Record a harvest
+   * Record a harvest. A harvest dated inside the pre-harvest interval of an
+   * input applied to the batch is refused, unless the owner overrides it.
    * @param {number} batchId - Batch ID
-   * @param {Object} data - Harvest data
-   * @param {number} userId - User ID
+   * @param {Object} data - Harvest data, with an optional override_reason
+   * @param {Object} user - The signed-in user ({id, role})
    * @returns {Promise<Object>}
+   * @throws {ConflictError} WITHDRAWAL_ACTIVE
    */
-  async recordHarvest(batchId, data, userId) {
-    const batch = await cropBatchRepository.findById(batchId);
-    if (!batch) {
-      throw new NotFoundError('Crop batch not found');
-    }
+  async recordHarvest(batchId, data, user) {
+    return db.tx(async (tx) => {
+      const batch = await cropBatchRepository.findById(batchId, tx);
+      if (!batch) {
+        throw new NotFoundError('Crop batch not found');
+      }
 
-    const harvestData = {
-      ...data,
-      batch_id: batchId,
-      recorded_by: userId,
-    };
+      const override = await withdrawalService.checkHarvest(
+        batch.id,
+        data.harvest_date,
+        { user, override_reason: data.override_reason },
+        tx
+      );
 
-    const harvest = await harvestRepository.create(harvestData);
+      const harvest = await harvestRepository.create(
+        {
+          harvest_date: data.harvest_date,
+          quantity: data.quantity,
+          unit: data.unit,
+          grade: data.grade,
+          notes: data.notes,
+          batch_id: batch.id,
+          recorded_by: user.id,
+          ...override,
+        },
+        tx
+      );
 
-    // Update batch status to 'harvesting' if it's still 'growing'
-    if (batch.status === 'growing' || batch.status === 'planted') {
-      await cropBatchRepository.updateStatus(batchId, 'harvesting');
-    }
+      // Update batch status to 'harvesting' if it's still 'growing'
+      if (batch.status === 'growing' || batch.status === 'planted') {
+        await cropBatchRepository.update(batch.id, { status: 'harvesting' }, tx);
+      }
 
-    return harvest;
+      return harvest;
+    });
   }
 
   /**
@@ -562,25 +590,91 @@ class CropService {
   // ==================== INPUT APPLICATIONS ====================
 
   /**
-   * Record an input application
+   * Record an input application. Given an inventory_item_id, the product is
+   * taken from stock (optionally from one inventory_batch_id) and the
+   * application keeps what it cost. The pre-harvest interval is the longer of
+   * the one entered and the item's own; harvesting before safe_harvest_date
+   * is then blocked. All or nothing: short stock records no application.
    * @param {number} batchId - Batch ID
    * @param {Object} data - Application data
    * @param {number} userId - User ID
-   * @returns {Promise<Object>}
+   * @param {Object} [t] - Outer transaction to join
+   * @returns {Promise<Object>} The application, with `stock` (batch_deductions,
+   *   current_stock, unit) when stock was used
+   * @throws {ConflictError} INSUFFICIENT_STOCK, BATCH_NOT_USABLE
    */
-  async recordInputApplication(batchId, data, userId) {
-    const batch = await cropBatchRepository.findById(batchId);
-    if (!batch) {
-      throw new NotFoundError('Crop batch not found');
-    }
+  async recordInputApplication(batchId, data, userId, t) {
+    return (t || db).tx(async (tx) => {
+      const batch = await cropBatchRepository.findById(batchId, tx);
+      if (!batch) {
+        throw new NotFoundError('Crop batch not found');
+      }
 
-    const applicationData = {
-      ...data,
-      batch_id: batchId,
-      recorded_by: userId,
-    };
+      let item = null;
+      if (data.inventory_item_id) {
+        item = await inventoryItemRepository.findById(data.inventory_item_id, tx);
+        if (!item) {
+          throw new NotFoundError('Inventory item not found');
+        }
+      }
 
-    return await cropInputApplicationRepository.create(applicationData);
+      const productName = data.product_name || (item && item.name);
+      const unit = data.unit || (item && item.unit);
+      if (!productName || !unit) {
+        throw new ValidationError('Product name and unit are required unless an inventory item is chosen');
+      }
+
+      const applicationDate = toDateString(data.application_date);
+      const interval = longerInterval(data.pre_harvest_interval_days, item && item.pre_harvest_interval_days);
+
+      // Computed columns are set here only, never taken from the request
+      const application = await cropInputApplicationRepository.create(
+        {
+          batch_id: batch.id,
+          application_date: applicationDate,
+          input_type: data.input_type,
+          product_name: productName,
+          quantity: data.quantity,
+          unit,
+          application_method: data.application_method,
+          target_pest_disease: data.target_pest_disease,
+          notes: data.notes,
+          recorded_by: userId,
+          inventory_item_id: item ? item.id : null,
+          pre_harvest_interval_days: interval,
+          safe_harvest_date: interval === null ? null : addDays(applicationDate, interval),
+        },
+        tx
+      );
+      if (!item) {
+        return application;
+      }
+
+      const drawn = await inventoryService.useStock(
+        item.id,
+        application.quantity,
+        {
+          unit,
+          inventory_batch_id: data.inventory_batch_id,
+          reference_type: INVENTORY_REFERENCE_TYPES.CROP_INPUT_APPLICATION,
+          reference_id: application.id,
+          transaction_date: applicationDate,
+          notes: `${data.input_type} applied to ${batch.batch_code}`,
+        },
+        userId,
+        tx
+      );
+
+      const updated = await cropInputApplicationRepository.update(
+        application.id,
+        { stock_quantity: drawn.quantity, total_cost: drawn.total_cost },
+        tx
+      );
+      return {
+        ...updated,
+        stock: { batch_deductions: drawn.batch_deductions, current_stock: drawn.current_stock, unit: drawn.unit },
+      };
+    });
   }
 
   /**
@@ -602,16 +696,25 @@ class CropService {
   }
 
   /**
-   * Delete an input application
+   * Delete an input application; any stock it used goes back
    * @param {number} id - Application ID
+   * @param {number} userId - User deleting it
    * @returns {Promise<void>}
    */
-  async deleteInputApplication(id) {
-    const application = await cropInputApplicationRepository.findById(id);
-    if (!application) {
-      throw new NotFoundError('Input application not found');
-    }
-    await cropInputApplicationRepository.softDelete(id);
+  async deleteInputApplication(id, userId) {
+    await db.tx(async (tx) => {
+      const application = await cropInputApplicationRepository.findById(id, tx);
+      if (!application) {
+        throw new NotFoundError('Input application not found');
+      }
+      await cropInputApplicationRepository.softDelete(application.id, tx);
+      await inventoryService.reverseReference(
+        INVENTORY_REFERENCE_TYPES.CROP_INPUT_APPLICATION,
+        application.id,
+        userId,
+        tx
+      );
+    });
   }
 
   // ==================== PEST & DISEASE ====================
@@ -1113,30 +1216,36 @@ class CropService {
    * @returns {Promise<Object>}
    */
   async completeScheduledTaskWithInput(taskId, inputData, userId) {
-    const task = await scheduledBatchTaskRepository.findById(taskId);
-    if (!task) {
-      throw new NotFoundError('Scheduled task not found');
-    }
+    return db.tx(async (tx) => {
+      const task = await scheduledBatchTaskRepository.findById(taskId, tx);
+      if (!task) {
+        throw new NotFoundError('Scheduled task not found');
+      }
 
-    // Record the input application
-    const application = await this.recordInputApplication(
-      task.batch_id,
-      {
-        application_date: inputData.application_date || new Date(),
-        input_type: inputData.input_type || task.input_type,
-        product_name: inputData.product_name || task.input_product_name,
-        quantity: inputData.quantity || task.input_quantity,
-        unit: inputData.unit || task.input_unit,
-        application_method: inputData.application_method || task.input_application_method,
-        target_pest_disease: inputData.target_pest_disease,
-        notes: inputData.notes,
-      },
-      userId
-    );
+      // Record the input application (and take it from stock if an item is given)
+      const application = await this.recordInputApplication(
+        task.batch_id,
+        {
+          application_date: inputData.application_date || new Date(),
+          input_type: inputData.input_type || task.input_type,
+          product_name: inputData.product_name || task.input_product_name,
+          quantity: inputData.quantity || task.input_quantity,
+          unit: inputData.unit || task.input_unit,
+          application_method: inputData.application_method || task.input_application_method,
+          target_pest_disease: inputData.target_pest_disease,
+          notes: inputData.notes,
+          inventory_item_id: inputData.inventory_item_id,
+          inventory_batch_id: inputData.inventory_batch_id,
+          pre_harvest_interval_days: inputData.pre_harvest_interval_days,
+        },
+        userId,
+        tx
+      );
 
-    // Link and complete the scheduled task
-    await scheduledBatchTaskRepository.linkToInputApplication(taskId, application.id);
-    return await scheduledBatchTaskRepository.markCompleted(taskId, userId, inputData.notes);
+      // Link and complete the scheduled task
+      await scheduledBatchTaskRepository.linkToInputApplication(taskId, application.id, tx);
+      return await scheduledBatchTaskRepository.markCompleted(taskId, userId, inputData.notes, tx);
+    });
   }
 
   /**
