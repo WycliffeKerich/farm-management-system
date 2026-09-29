@@ -53,7 +53,7 @@ class AnimalProductionController {
   async getAllProductionRecords(req, res, next) {
     try {
       const result = await animalProductionService.getAllProductionRecords(req.query);
-      res.json({ success: true, data: result });
+      res.json({ success: true, ...result });
     } catch (error) {
       next(error);
     }

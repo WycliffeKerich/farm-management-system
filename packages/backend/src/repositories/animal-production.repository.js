@@ -76,6 +76,14 @@ class AnimalProductionRepository {
     );
   }
 
+  async productionTypeInUse(id) {
+    const { exists } = await db.one(
+      'SELECT EXISTS(SELECT 1 FROM animal_production_records WHERE production_type_id = $1 AND deleted_at IS NULL) AS exists',
+      [id]
+    );
+    return exists;
+  }
+
   // ==================== PRODUCTION RECORDS ====================
 
   async findAllProductionRecords(filters = {}) {

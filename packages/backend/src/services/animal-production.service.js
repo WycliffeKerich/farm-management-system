@@ -1,5 +1,5 @@
 const animalProductionRepository = require('../repositories/animal-production.repository');
-const { AppError, NotFoundError, ValidationError } = require('../utils/errors');
+const { AppError, ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
 
 class AnimalProductionService {
   // ==================== PRODUCTION TYPES ====================
@@ -27,6 +27,9 @@ class AnimalProductionService {
 
   async deleteProductionType(id) {
     await this.getProductionTypeById(id);
+    if (await animalProductionRepository.productionTypeInUse(id)) {
+      throw new ConflictError('Cannot delete a production type that has records', 'IN_USE');
+    }
     const result = await animalProductionRepository.deleteProductionType(id);
     if (result.rowCount === 0) {
       throw new AppError('Failed to delete production type', 500, 'SERVER_ERROR');

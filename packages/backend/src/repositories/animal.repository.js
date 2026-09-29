@@ -167,16 +167,17 @@ class AnimalRepository extends BaseRepository {
    * @param {number} id - Animal ID
    * @param {string} status - New status
    * @param {Date} statusDate - Status change date
+   * @param {Object} [t] - pg-promise task or transaction
    * @returns {Promise<Object>}
    */
-  async updateStatus(id, status, statusDate = new Date()) {
+  async updateStatus(id, status, statusDate = new Date(), t) {
     const query = `
       UPDATE ${this.tableName}
       SET status = $2, status_date = $3, updated_at = CURRENT_TIMESTAMP
       WHERE id = $1 AND deleted_at IS NULL
       RETURNING *
     `;
-    return await this.db.one(query, [id, status, statusDate]);
+    return await this.conn(t).one(query, [id, status, statusDate]);
   }
 
   /**

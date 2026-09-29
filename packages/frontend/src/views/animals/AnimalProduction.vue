@@ -428,7 +428,7 @@ const loadRecords = async () => {
     });
 
     const response = await animalService.getProductionRecords(params);
-    const result = response.data.data || response.data || {};
+    const result = response.data || {};
     records.value = result.data || [];
     if (result.pagination) {
       pagination.value = result.pagination;

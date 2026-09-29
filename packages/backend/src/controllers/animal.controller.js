@@ -346,7 +346,7 @@ class AnimalController {
   async recordGroupRemoval(req, res, next) {
     try {
       const result = await animalService.recordGroupRemoval(req.params.id, req.body, req.user.id);
-      res.json({ success: true, data: result });
+      res.status(201).json({ success: true, data: result });
     } catch (error) {
       next(error);
     }
