@@ -145,6 +145,14 @@ router.post(
   inventoryController.createTransaction.bind(inventoryController)
 );
 
+router.post(
+  '/items/:id/use',
+  authorize(['owner', 'manager', 'worker']),
+  inventoryValidators.useStock,
+  validate,
+  inventoryController.useStock.bind(inventoryController)
+);
+
 // ==================== UNITS OF MEASURE ====================
 
 router.get(

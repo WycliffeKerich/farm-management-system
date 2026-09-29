@@ -1,11 +1,45 @@
 const BaseRepository = require('./base.repository');
+const { pgp } = require('../config/database');
 
 /**
  * Repository for inventory batches
+ *
+ * `quantity` is what remains in the batch. It is not writable through
+ * update(): it changes through setQuantity, alongside a ledger row.
  */
 class InventoryBatchRepository extends BaseRepository {
   constructor() {
-    super('inventory_batches');
+    super('inventory_batches', {
+      columns: [
+        'inventory_item_id',
+        'batch_number',
+        'initial_quantity',
+        'unit_cost',
+        'total_cost',
+        'manufacture_date',
+        'expiry_date',
+        'received_date',
+        'supplier',
+        'supplier_batch_number',
+        'storage_location',
+        'status',
+        'notes',
+        'created_by',
+      ],
+      sortable: ['batch_number', 'expiry_date', 'received_date', 'quantity', 'created_at'],
+    });
+  }
+
+  /**
+   * Insert a batch with its received quantity
+   * @param {Object} data - Batch data; `quantity` becomes quantity and initial_quantity
+   * @param {Object} [t] - Task/transaction
+   * @returns {Promise<Object>} Created batch
+   */
+  async createWithQuantity(data, t) {
+    const values = await this.pickWritable({ ...data, initial_quantity: data.quantity });
+    values.quantity = data.quantity;
+    return this.conn(t).one(pgp.helpers.insert(values, null, this.tableName) + ' RETURNING *');
   }
 
   /**
@@ -27,7 +61,7 @@ class InventoryBatchRepository extends BaseRepository {
       LEFT JOIN units_of_measure uom ON ii.unit_of_measure_id = uom.id
       WHERE ib.batch_number = $1 AND ib.deleted_at IS NULL
     `;
-    return await this.db.oneOrNone(query, [batchNumber]);
+    return this.db.oneOrNone(query, [batchNumber]);
   }
 
   /**
@@ -61,31 +95,29 @@ class InventoryBatchRepository extends BaseRepository {
 
     query += ` ORDER BY ib.expiry_date ASC NULLS LAST, ib.received_date ASC`;
 
-    return await this.db.any(query, [itemId]);
+    return this.db.any(query, [itemId]);
   }
 
   /**
-   * Find active batches for an item (FIFO order)
+   * Lock the batches FEFO may draw from, in the order it draws: earliest
+   * expiry first (no expiry last), then oldest received. Expired batches are
+   * never used even if the nightly status job has not marked them yet.
    * @param {number} itemId - Inventory item ID
-   * @returns {Promise<Array>} Active batches sorted by expiry date (FEFO) then received date (FIFO)
+   * @param {Object} t - Transaction (required: the locks only last for its duration)
+   * @returns {Promise<Array>} Locked batches
    */
-  async findActiveBatchesFIFO(itemId) {
-    const query = `
-      SELECT
-        ib.*,
-        ii.name as item_name,
-        ii.item_code,
-        uom.symbol as unit_symbol
-      FROM ${this.tableName} ib
-      JOIN inventory_items ii ON ib.inventory_item_id = ii.id
-      LEFT JOIN units_of_measure uom ON ii.unit_of_measure_id = uom.id
-      WHERE ib.inventory_item_id = $1
-        AND ib.status = 'active'
-        AND ib.quantity > 0
-        AND ib.deleted_at IS NULL
-      ORDER BY ib.expiry_date ASC NULLS LAST, ib.received_date ASC, ib.id ASC
-    `;
-    return await this.db.any(query, [itemId]);
+  async lockAvailableForItem(itemId, t) {
+    return t.any(
+      `SELECT * FROM ${this.tableName}
+        WHERE inventory_item_id = $1
+          AND status = 'active'
+          AND quantity > 0
+          AND deleted_at IS NULL
+          AND (expiry_date IS NULL OR expiry_date >= CURRENT_DATE)
+        ORDER BY expiry_date ASC NULLS LAST, received_date ASC, id ASC
+        FOR UPDATE`,
+      [itemId]
+    );
   }
 
   /**
@@ -107,7 +139,7 @@ class InventoryBatchRepository extends BaseRepository {
       LEFT JOIN inventory_categories ic ON ii.category_id = ic.id
       LEFT JOIN units_of_measure uom ON ii.unit_of_measure_id = uom.id
       WHERE ib.expiry_date IS NOT NULL
-        AND ib.expiry_date <= CURRENT_DATE + $1
+        AND ib.expiry_date <= CURRENT_DATE + $1::int
         AND ib.expiry_date >= CURRENT_DATE
         AND ib.status = 'active'
         AND ib.quantity > 0
@@ -115,7 +147,7 @@ class InventoryBatchRepository extends BaseRepository {
         AND ii.deleted_at IS NULL
       ORDER BY ib.expiry_date ASC
     `;
-    return await this.db.any(query, [days]);
+    return this.db.any(query, [days]);
   }
 
   /**
@@ -142,62 +174,40 @@ class InventoryBatchRepository extends BaseRepository {
         AND ii.deleted_at IS NULL
       ORDER BY ib.expiry_date ASC
     `;
-    return await this.db.any(query);
+    return this.db.any(query);
   }
 
   /**
-   * Deduct quantity from batches using FEFO (First Expiry First Out)
-   * @param {number} itemId - Inventory item ID
-   * @param {number} quantity - Quantity to deduct
-   * @returns {Promise<Array>} Array of batch deductions made
-   */
-  async deductQuantityFEFO(itemId, quantity) {
-    const batches = await this.findActiveBatchesFIFO(itemId);
-    const deductions = [];
-    let remainingQuantity = quantity;
-
-    for (const batch of batches) {
-      if (remainingQuantity <= 0) break;
-
-      const deductAmount = Math.min(batch.quantity, remainingQuantity);
-
-      // Update batch quantity
-      const newQuantity = batch.quantity - deductAmount;
-      await this.update(batch.id, { quantity: newQuantity });
-
-      deductions.push({
-        batch_id: batch.id,
-        batch_number: batch.batch_number,
-        quantity_deducted: deductAmount,
-        remaining_in_batch: newQuantity,
-      });
-
-      remainingQuantity -= deductAmount;
-    }
-
-    if (remainingQuantity > 0) {
-      throw new Error(
-        `Insufficient stock. Requested: ${quantity}, Available: ${quantity - remainingQuantity}`
-      );
-    }
-
-    return deductions;
-  }
-
-  /**
-   * Add quantity to a specific batch
+   * Set what remains in a batch (the status trigger marks it depleted at 0)
    * @param {number} batchId - Batch ID
-   * @param {number} quantity - Quantity to add
+   * @param {number} quantity - New remaining quantity
+   * @param {Object} t - Transaction
    * @returns {Promise<Object>} Updated batch
    */
-  async addQuantity(batchId, quantity) {
-    const query = `
-      UPDATE ${this.tableName}
-      SET quantity = quantity + $2, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND deleted_at IS NULL
-      RETURNING *
-    `;
-    return await this.db.one(query, [batchId, quantity]);
+  async setQuantity(batchId, quantity, t) {
+    return t.one(
+      `UPDATE ${this.tableName} SET quantity = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING *`,
+      [batchId, quantity]
+    );
+  }
+
+  /**
+   * Items whose live batches hold more than the item's stock. Batches are a
+   * breakdown of current_stock, so this should never happen.
+   * @returns {Promise<Array>} { item_id, item_code, name, current_stock, batch_stock }
+   */
+  async findItemsWithExcessBatchStock() {
+    return this.db.any(`
+      SELECT ii.id AS item_id, ii.item_code, ii.name, ii.current_stock, b.batch_stock
+        FROM inventory_items ii
+        JOIN (
+          SELECT inventory_item_id, SUM(quantity) AS batch_stock
+            FROM inventory_batches
+           WHERE deleted_at IS NULL AND status IN ('active', 'quarantine')
+           GROUP BY inventory_item_id
+        ) b ON b.inventory_item_id = ii.id
+       WHERE b.batch_stock > ii.current_stock
+       ORDER BY ii.id`);
   }
 
   /**
@@ -218,7 +228,7 @@ class InventoryBatchRepository extends BaseRepository {
       FROM ${this.tableName}
       WHERE inventory_item_id = $1 AND deleted_at IS NULL
     `;
-    return await this.db.one(query, [itemId]);
+    return this.db.one(query, [itemId]);
   }
 
   /**
@@ -265,7 +275,7 @@ class InventoryBatchRepository extends BaseRepository {
         ii.item_code,
         ic.name as category_name,
         uom.symbol as unit_symbol,
-        u.full_name as created_by_name
+        CONCAT(u.first_name, ' ', u.last_name) as created_by_name
       FROM ${this.tableName} ib
       JOIN inventory_items ii ON ib.inventory_item_id = ii.id
       LEFT JOIN inventory_categories ic ON ii.category_id = ic.id
@@ -296,8 +306,8 @@ class InventoryBatchRepository extends BaseRepository {
     }
 
     if (expiring_within_days) {
-      query += ` AND ib.expiry_date IS NOT NULL AND ib.expiry_date <= CURRENT_DATE + $${paramIndex} AND ib.expiry_date >= CURRENT_DATE`;
-      countQuery += ` AND ib.expiry_date IS NOT NULL AND ib.expiry_date <= CURRENT_DATE + $${paramIndex} AND ib.expiry_date >= CURRENT_DATE`;
+      query += ` AND ib.expiry_date IS NOT NULL AND ib.expiry_date <= CURRENT_DATE + $${paramIndex}::int AND ib.expiry_date >= CURRENT_DATE`;
+      countQuery += ` AND ib.expiry_date IS NOT NULL AND ib.expiry_date <= CURRENT_DATE + $${paramIndex}::int AND ib.expiry_date >= CURRENT_DATE`;
       values.push(expiring_within_days);
       paramIndex++;
     }

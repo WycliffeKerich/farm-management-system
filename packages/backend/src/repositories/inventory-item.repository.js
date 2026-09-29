@@ -2,40 +2,61 @@ const BaseRepository = require('./base.repository');
 
 /**
  * Repository for inventory items
- * Note: Uses existing schema column names for compatibility
+ *
+ * current_stock is not writable through create/update: it only changes
+ * through setStock, alongside a ledger row (see InventoryService).
  */
 class InventoryItemRepository extends BaseRepository {
   constructor() {
-    super('inventory_items');
+    super('inventory_items', {
+      columns: [
+        'category_id',
+        'item_code',
+        'name',
+        'description',
+        'unit',
+        'unit_of_measure_id',
+        'minimum_stock',
+        'cost_per_unit',
+        'supplier',
+        'location',
+        'expiry_date',
+        'notes',
+        'is_active',
+      ],
+      sortable: ['name', 'item_code', 'current_stock', 'minimum_stock', 'expiry_date', 'created_at', 'updated_at'],
+    });
   }
 
   /**
    * Find item by item code
    * @param {string} itemCode - Item code
+   * @param {Object} [t] - Task/transaction
    * @returns {Promise<Object|null>} Item or null
    */
-  async findByItemCode(itemCode) {
+  async findByItemCode(itemCode, t) {
     const query = `
       SELECT ii.*, ic.name as category_name
       FROM ${this.tableName} ii
       JOIN inventory_categories ic ON ii.category_id = ic.id
       WHERE ii.item_code = $1 AND ii.deleted_at IS NULL
     `;
-    return await this.db.oneOrNone(query, [itemCode]);
+    return this.conn(t).oneOrNone(query, [itemCode]);
   }
 
   /**
    * Find item by name within a category
    * @param {string} name - Item name
    * @param {number} categoryId - Category ID
+   * @param {Object} [t] - Task/transaction
    * @returns {Promise<Object|null>} Item or null
    */
-  async findByNameInCategory(name, categoryId) {
+  async findByNameInCategory(name, categoryId, t) {
     const query = `
       SELECT * FROM ${this.tableName}
       WHERE LOWER(name) = LOWER($1) AND category_id = $2 AND deleted_at IS NULL
     `;
-    return await this.db.oneOrNone(query, [name, categoryId]);
+    return this.conn(t).oneOrNone(query, [name, categoryId]);
   }
 
   /**
@@ -68,15 +89,16 @@ class InventoryItemRepository extends BaseRepository {
 
     query += ' ORDER BY ii.name ASC';
 
-    return await this.db.any(query, values);
+    return this.db.any(query, values);
   }
 
   /**
    * Find item by ID with category info
    * @param {number} id - Item ID
+   * @param {Object} [t] - Task/transaction
    * @returns {Promise<Object|null>} Item or null
    */
-  async findByIdWithCategory(id) {
+  async findByIdWithCategory(id, t) {
     const query = `
       SELECT
         ii.*,
@@ -85,11 +107,22 @@ class InventoryItemRepository extends BaseRepository {
       JOIN inventory_categories ic ON ii.category_id = ic.id
       WHERE ii.id = $1 AND ii.deleted_at IS NULL
     `;
-    return await this.db.oneOrNone(query, [id]);
+    return this.conn(t).oneOrNone(query, [id]);
   }
 
   /**
-   * Get items with low stock (current_stock <= min_stock_level)
+   * Lock an item row for a stock change. Concurrent writers to the same item
+   * wait here until this transaction ends, so they always see the latest stock.
+   * @param {number} id - Item ID
+   * @param {Object} t - Transaction (required: the lock only lasts for its duration)
+   * @returns {Promise<Object|null>} Item or null
+   */
+  async findByIdForUpdate(id, t) {
+    return t.oneOrNone(`SELECT * FROM ${this.tableName} WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, [id]);
+  }
+
+  /**
+   * Get items with low stock (current_stock <= minimum_stock)
    * @returns {Promise<Array>} Low stock items
    */
   async findLowStock() {
@@ -105,7 +138,7 @@ class InventoryItemRepository extends BaseRepository {
         AND ii.current_stock <= ii.minimum_stock
       ORDER BY (ii.current_stock / NULLIF(ii.minimum_stock, 0)) ASC, ii.name ASC
     `;
-    return await this.db.any(query);
+    return this.db.any(query);
   }
 
   /**
@@ -122,91 +155,47 @@ class InventoryItemRepository extends BaseRepository {
       JOIN inventory_categories ic ON ii.category_id = ic.id
       WHERE ii.deleted_at IS NULL
         AND ii.expiry_date IS NOT NULL
-        AND ii.expiry_date <= CURRENT_DATE + $1
+        AND ii.expiry_date <= CURRENT_DATE + $1::int
         AND ii.expiry_date >= CURRENT_DATE
         AND ii.current_stock > 0
       ORDER BY ii.expiry_date ASC
     `;
-    return await this.db.any(query, [days]);
+    return this.db.any(query, [days]);
   }
 
   /**
-   * Update stock level
+   * Set the stock level. Only call with a row locked by findByIdForUpdate,
+   * in the same transaction that writes the matching ledger row.
    * @param {number} id - Item ID
-   * @param {number} quantity - Quantity to add (can be negative)
+   * @param {number} stock - New stock level
+   * @param {Object} t - Transaction
    * @returns {Promise<Object>} Updated item
    */
-  async updateStock(id, quantity) {
-    const query = `
-      UPDATE ${this.tableName}
-      SET current_stock = current_stock + $2, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND deleted_at IS NULL
-      RETURNING *
-    `;
-    return await this.db.one(query, [id, quantity]);
+  async setStock(id, stock, t) {
+    return t.one(
+      `UPDATE ${this.tableName}
+          SET current_stock = $2, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 AND deleted_at IS NULL
+        RETURNING *`,
+      [id, stock]
+    );
   }
 
   /**
-   * Get the next item code for a category
+   * Get the next item code for a category prefix. Deleted items keep their
+   * codes, so they are counted too.
    * @param {string} categoryPrefix - Category prefix (e.g., 'SED', 'FED')
+   * @param {Object} [t] - Task/transaction
    * @returns {Promise<string>} Next item code
    */
-  async getNextItemCode(categoryPrefix) {
-    const query = `
-      SELECT item_code FROM ${this.tableName}
-      WHERE item_code LIKE $1
-      ORDER BY item_code DESC
-      LIMIT 1
-    `;
-    const result = await this.db.oneOrNone(query, [`${categoryPrefix}%`]);
-
-    if (!result) {
-      return `${categoryPrefix}-0001`;
-    }
-
-    const currentNumber = parseInt(result.item_code.split('-')[1], 10);
-    const nextNumber = currentNumber + 1;
-    return `${categoryPrefix}-${nextNumber.toString().padStart(4, '0')}`;
-  }
-
-  /**
-   * Create item with schema-compatible column names
-   * @param {Object} data - Item data
-   * @returns {Promise<Object>} Created item
-   */
-  async create(data) {
-    const columns = Object.keys(data);
-    const values = Object.values(data);
-    const placeholders = columns.map((_, index) => `$${index + 1}`).join(', ');
-
-    const query = `
-      INSERT INTO ${this.tableName} (${columns.join(', ')})
-      VALUES (${placeholders})
-      RETURNING *
-    `;
-
-    return await this.db.one(query, values);
-  }
-
-  /**
-   * Update item with schema-compatible column names
-   * @param {number} id - Item ID
-   * @param {Object} data - Updated data
-   * @returns {Promise<Object>} Updated item
-   */
-  async update(id, data) {
-    const columns = Object.keys(data);
-    const values = Object.values(data);
-    const setClause = columns.map((col, index) => `${col} = $${index + 2}`).join(', ');
-
-    const query = `
-      UPDATE ${this.tableName}
-      SET ${setClause}, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND deleted_at IS NULL
-      RETURNING *
-    `;
-
-    return await this.db.one(query, [id, ...values]);
+  async getNextItemCode(categoryPrefix, t) {
+    const { next } = await this.conn(t).one(
+      `SELECT COALESCE(MAX(substring(item_code FROM '-(\\d+)$')::int), 0) + 1 AS next
+         FROM ${this.tableName}
+        WHERE item_code LIKE $1`,
+      [`${categoryPrefix}-%`]
+    );
+    return `${categoryPrefix}-${String(next).padStart(4, '0')}`;
   }
 
   /**
@@ -258,8 +247,8 @@ class InventoryItemRepository extends BaseRepository {
     }
 
     if (filters.expiring_days) {
-      query += ` AND ii.expiry_date IS NOT NULL AND ii.expiry_date <= CURRENT_DATE + $${paramIndex++} AND ii.expiry_date >= CURRENT_DATE`;
-      countQuery += ` AND ii.expiry_date IS NOT NULL AND ii.expiry_date <= CURRENT_DATE + $${countParamIndex++} AND ii.expiry_date >= CURRENT_DATE`;
+      query += ` AND ii.expiry_date IS NOT NULL AND ii.expiry_date <= CURRENT_DATE + $${paramIndex++}::int AND ii.expiry_date >= CURRENT_DATE`;
+      countQuery += ` AND ii.expiry_date IS NOT NULL AND ii.expiry_date <= CURRENT_DATE + $${countParamIndex++}::int AND ii.expiry_date >= CURRENT_DATE`;
       values.push(filters.expiring_days);
       countValues.push(filters.expiring_days);
     }
@@ -267,10 +256,7 @@ class InventoryItemRepository extends BaseRepository {
     query += ` ORDER BY ii.name ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
     values.push(limit, offset);
 
-    const [data, countResult] = await Promise.all([
-      this.db.any(query, values),
-      this.db.one(countQuery, countValues),
-    ]);
+    const [data, countResult] = await Promise.all([this.db.any(query, values), this.db.one(countQuery, countValues)]);
 
     const total = parseInt(countResult.count, 10);
 

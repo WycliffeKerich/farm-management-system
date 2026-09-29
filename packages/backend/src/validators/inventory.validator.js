@@ -1,4 +1,7 @@
 const { body, param, query } = require('express-validator');
+const { INVENTORY_TRANSACTION_TYPES } = require('../config/constants');
+
+const TRANSACTION_TYPES = Object.values(INVENTORY_TRANSACTION_TYPES);
 
 /**
  * Validators for inventory management endpoints
@@ -12,7 +15,7 @@ const inventoryValidators = {
       .notEmpty().withMessage('Name is required')
       .isLength({ max: 100 }).withMessage('Name must be at most 100 characters'),
     body('description')
-      .optional()
+      .optional({ values: 'null' })
       .trim(),
   ],
 
@@ -24,7 +27,7 @@ const inventoryValidators = {
       .notEmpty().withMessage('Name cannot be empty')
       .isLength({ max: 100 }).withMessage('Name must be at most 100 characters'),
     body('description')
-      .optional()
+      .optional({ values: 'null' })
       .trim(),
   ],
 
@@ -46,24 +49,24 @@ const inventoryValidators = {
       .optional()
       .isFloat({ min: 0 }).withMessage('Current stock must be a non-negative number'),
     body('minimum_stock')
-      .optional()
+      .optional({ values: 'null' })
       .isFloat({ min: 0 }).withMessage('Minimum stock must be a non-negative number'),
     body('cost_per_unit')
-      .optional()
+      .optional({ values: 'null' })
       .isFloat({ min: 0 }).withMessage('Cost per unit must be a non-negative number'),
     body('supplier')
-      .optional()
+      .optional({ values: 'null' })
       .trim()
       .isLength({ max: 200 }).withMessage('Supplier must be at most 200 characters'),
     body('location')
-      .optional()
+      .optional({ values: 'null' })
       .trim()
       .isLength({ max: 200 }).withMessage('Location must be at most 200 characters'),
     body('expiry_date')
-      .optional()
+      .optional({ values: 'null' })
       .isISO8601().withMessage('Invalid date format'),
     body('notes')
-      .optional()
+      .optional({ values: 'null' })
       .trim(),
   ],
 
@@ -83,24 +86,24 @@ const inventoryValidators = {
       .notEmpty().withMessage('Unit cannot be empty')
       .isLength({ max: 50 }).withMessage('Unit must be at most 50 characters'),
     body('minimum_stock')
-      .optional()
+      .optional({ values: 'null' })
       .isFloat({ min: 0 }).withMessage('Minimum stock must be a non-negative number'),
     body('cost_per_unit')
-      .optional()
+      .optional({ values: 'null' })
       .isFloat({ min: 0 }).withMessage('Cost per unit must be a non-negative number'),
     body('supplier')
-      .optional()
+      .optional({ values: 'null' })
       .trim()
       .isLength({ max: 200 }).withMessage('Supplier must be at most 200 characters'),
     body('location')
-      .optional()
+      .optional({ values: 'null' })
       .trim()
       .isLength({ max: 200 }).withMessage('Location must be at most 200 characters'),
     body('expiry_date')
-      .optional()
+      .optional({ values: 'null' })
       .isISO8601().withMessage('Invalid date format'),
     body('notes')
-      .optional()
+      .optional({ values: 'null' })
       .trim(),
   ],
 
@@ -112,29 +115,51 @@ const inventoryValidators = {
       .isInt().withMessage('Item ID must be an integer'),
     body('transaction_type')
       .notEmpty().withMessage('Transaction type is required')
-      .isIn(['purchase', 'usage', 'adjustment', 'return', 'expired', 'transfer'])
+      .isIn(TRANSACTION_TYPES)
       .withMessage('Invalid transaction type'),
     body('quantity')
       .notEmpty().withMessage('Quantity is required')
-      .isFloat().withMessage('Quantity must be a number'),
+      .isFloat().withMessage('Quantity must be a number')
+      .custom((value, { req }) => req.body.transaction_type === 'adjustment' || Number(value) > 0)
+      .withMessage('Quantity must be greater than zero'),
     body('unit_cost')
-      .optional()
+      .optional({ values: 'null' })
       .isFloat({ min: 0 }).withMessage('Unit cost must be a non-negative number'),
     body('total_cost')
-      .optional()
+      .optional({ values: 'null' })
       .isFloat({ min: 0 }).withMessage('Total cost must be a non-negative number'),
     body('reference_type')
-      .optional()
+      .optional({ values: 'null' })
       .isIn(['crop_batch', 'animal', 'animal_group', 'task', 'manual'])
       .withMessage('Invalid reference type'),
     body('reference_id')
-      .optional()
+      .optional({ values: 'null' })
       .isInt().withMessage('Reference ID must be an integer'),
     body('transaction_date')
-      .optional()
+      .optional({ values: 'null' })
       .isISO8601().withMessage('Invalid date format'),
     body('notes')
-      .optional()
+      .optional({ values: 'null' })
+      .trim(),
+  ],
+
+  useStock: [
+    param('id').isInt().withMessage('Invalid item ID'),
+    body('quantity')
+      .notEmpty().withMessage('Quantity is required')
+      .isFloat({ gt: 0 }).withMessage('Quantity must be greater than zero'),
+    body('reference_type')
+      .optional({ values: 'null' })
+      .isIn(['crop_batch', 'animal', 'animal_group', 'task', 'manual'])
+      .withMessage('Invalid reference type'),
+    body('reference_id')
+      .optional({ values: 'null' })
+      .isInt().withMessage('Reference ID must be an integer'),
+    body('transaction_date')
+      .optional({ values: 'null' })
+      .isISO8601().withMessage('Invalid date format'),
+    body('notes')
+      .optional({ values: 'null' })
       .trim(),
   ],
 
@@ -185,7 +210,7 @@ const inventoryValidators = {
       .isInt().withMessage('Item ID must be an integer'),
     query('transaction_type')
       .optional()
-      .isIn(['purchase', 'usage', 'adjustment', 'return', 'expired', 'transfer'])
+      .isIn(TRANSACTION_TYPES)
       .withMessage('Invalid transaction type'),
     query('date_from')
       .optional()
@@ -203,7 +228,7 @@ const inventoryValidators = {
     param('id').isInt().withMessage('Invalid item ID'),
     query('transaction_type')
       .optional()
-      .isIn(['purchase', 'usage', 'adjustment', 'return', 'expired', 'transfer'])
+      .isIn(TRANSACTION_TYPES)
       .withMessage('Invalid transaction type'),
     query('date_from')
       .optional()
@@ -245,13 +270,13 @@ const inventoryValidators = {
       .isIn(['weight', 'volume', 'length', 'area', 'count', 'time', 'other'])
       .withMessage('Invalid category'),
     body('base_unit_id')
-      .optional()
+      .optional({ values: 'null' })
       .isInt().withMessage('Base unit ID must be an integer'),
     body('conversion_factor')
-      .optional()
+      .optional({ values: 'null' })
       .isFloat({ min: 0 }).withMessage('Conversion factor must be a positive number'),
     body('description')
-      .optional()
+      .optional({ values: 'null' })
       .trim(),
   ],
 
@@ -263,7 +288,7 @@ const inventoryValidators = {
       .notEmpty().withMessage('Name cannot be empty')
       .isLength({ max: 50 }).withMessage('Name must be at most 50 characters'),
     body('symbol')
-      .optional()
+      .optional({ values: 'null' })
       .trim()
       .notEmpty().withMessage('Symbol cannot be empty')
       .isLength({ max: 20 }).withMessage('Symbol must be at most 20 characters'),
@@ -272,13 +297,13 @@ const inventoryValidators = {
       .isIn(['weight', 'volume', 'length', 'area', 'count', 'time', 'other'])
       .withMessage('Invalid category'),
     body('base_unit_id')
-      .optional()
+      .optional({ values: 'null' })
       .isInt().withMessage('Base unit ID must be an integer'),
     body('conversion_factor')
-      .optional()
+      .optional({ values: 'null' })
       .isFloat({ min: 0 }).withMessage('Conversion factor must be a positive number'),
     body('description')
-      .optional()
+      .optional({ values: 'null' })
       .trim(),
     body('is_active')
       .optional()
@@ -305,65 +330,65 @@ const inventoryValidators = {
       .isInt().withMessage('Item ID must be an integer'),
     body('quantity')
       .notEmpty().withMessage('Quantity is required')
-      .isFloat({ min: 0 }).withMessage('Quantity must be a non-negative number'),
+      .isFloat({ gt: 0 }).withMessage('Quantity must be greater than zero'),
     body('batch_number')
-      .optional()
+      .optional({ values: 'null' })
       .trim()
       .isLength({ max: 100 }).withMessage('Batch number must be at most 100 characters'),
     body('unit_cost')
-      .optional()
+      .optional({ values: 'null' })
       .isFloat({ min: 0 }).withMessage('Unit cost must be a non-negative number'),
     body('manufacture_date')
-      .optional()
+      .optional({ values: 'null' })
       .isISO8601().withMessage('Invalid manufacture date format'),
     body('expiry_date')
-      .optional()
+      .optional({ values: 'null' })
       .isISO8601().withMessage('Invalid expiry date format'),
     body('received_date')
-      .optional()
+      .optional({ values: 'null' })
       .isISO8601().withMessage('Invalid received date format'),
     body('supplier')
-      .optional()
+      .optional({ values: 'null' })
       .trim()
       .isLength({ max: 255 }).withMessage('Supplier must be at most 255 characters'),
     body('supplier_batch_number')
-      .optional()
+      .optional({ values: 'null' })
       .trim()
       .isLength({ max: 100 }).withMessage('Supplier batch number must be at most 100 characters'),
     body('storage_location')
-      .optional()
+      .optional({ values: 'null' })
       .trim()
       .isLength({ max: 200 }).withMessage('Storage location must be at most 200 characters'),
     body('notes')
-      .optional()
+      .optional({ values: 'null' })
       .trim(),
   ],
 
   updateBatch: [
     param('id').isInt().withMessage('Invalid batch ID'),
     body('batch_number')
-      .optional()
+      .optional({ values: 'null' })
       .trim()
       .isLength({ max: 100 }).withMessage('Batch number must be at most 100 characters'),
     body('unit_cost')
-      .optional()
+      .optional({ values: 'null' })
       .isFloat({ min: 0 }).withMessage('Unit cost must be a non-negative number'),
     body('manufacture_date')
-      .optional()
+      .optional({ values: 'null' })
       .isISO8601().withMessage('Invalid manufacture date format'),
     body('expiry_date')
-      .optional()
+      .optional({ values: 'null' })
       .isISO8601().withMessage('Invalid expiry date format'),
     body('supplier')
-      .optional()
+      .optional({ values: 'null' })
       .trim()
       .isLength({ max: 255 }).withMessage('Supplier must be at most 255 characters'),
     body('supplier_batch_number')
-      .optional()
+      .optional({ values: 'null' })
       .trim()
       .isLength({ max: 100 }).withMessage('Supplier batch number must be at most 100 characters'),
     body('storage_location')
-      .optional()
+      .optional({ values: 'null' })
       .trim()
       .isLength({ max: 200 }).withMessage('Storage location must be at most 200 characters'),
     body('status')
@@ -371,7 +396,7 @@ const inventoryValidators = {
       .isIn(['active', 'depleted', 'expired', 'quarantine', 'disposed'])
       .withMessage('Invalid status'),
     body('notes')
-      .optional()
+      .optional({ values: 'null' })
       .trim(),
   ],
 

@@ -3,7 +3,37 @@ const inventoryItemRepository = require('../repositories/inventory-item.reposito
 const inventoryTransactionRepository = require('../repositories/inventory-transaction.repository');
 const inventoryBatchRepository = require('../repositories/inventory-batch.repository');
 const unitOfMeasureRepository = require('../repositories/unit-of-measure.repository');
-const { INVENTORY_TRANSACTION_TYPES } = require('../config/constants');
+const { db } = require('../config/database');
+const { NotFoundError, ValidationError, ConflictError } = require('../utils/errors');
+const { INVENTORY_TRANSACTION_TYPES, INVENTORY_OUTGOING_TYPES } = require('../config/constants');
+
+/*
+ * Stock quantities are NUMERIC(10,2). Arithmetic is done in whole hundredths so
+ * JS floats never drift (0.1 + 0.2) before a comparison or a write.
+ */
+const toHundredths = (value) => Math.round(Number(value) * 100);
+const fromHundredths = (value) => value / 100;
+
+/**
+ * Parse a quantity to a 2-decimal number
+ * @param {*} value
+ * @returns {number}
+ */
+function toQuantity(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    throw new ValidationError('Quantity must be a number');
+  }
+  return fromHundredths(toHundredths(number));
+}
+
+function insufficientStock(available, requested, unit) {
+  return new ConflictError(
+    `Insufficient stock: ${available}${unit ? ` ${unit}` : ''} available, ${requested} requested`,
+    'INSUFFICIENT_STOCK',
+    { available, requested }
+  );
+}
 
 /**
  * Service for inventory management
@@ -38,7 +68,7 @@ class InventoryService {
   async getCategoryById(id) {
     const category = await inventoryCategoryRepository.findById(id);
     if (!category) {
-      throw new Error('Category not found');
+      throw new NotFoundError('Category not found');
     }
     return category;
   }
@@ -51,9 +81,12 @@ class InventoryService {
   async createCategory(data) {
     const existing = await inventoryCategoryRepository.findByName(data.name);
     if (existing) {
-      throw new Error('Category with this name already exists');
+      throw new ConflictError('Category with this name already exists', 'DUPLICATE');
     }
-    return await inventoryCategoryRepository.create(data);
+    return await inventoryCategoryRepository.create({
+      ...data,
+      type: data.type || data.name.toLowerCase().replace(/\s+/g, '_'),
+    });
   }
 
   /**
@@ -65,13 +98,13 @@ class InventoryService {
   async updateCategory(id, data) {
     const category = await inventoryCategoryRepository.findById(id);
     if (!category) {
-      throw new Error('Category not found');
+      throw new NotFoundError('Category not found');
     }
 
     if (data.name && data.name !== category.name) {
       const existing = await inventoryCategoryRepository.findByName(data.name);
       if (existing) {
-        throw new Error('Category with this name already exists');
+        throw new ConflictError('Category with this name already exists', 'DUPLICATE');
       }
     }
 
@@ -85,13 +118,13 @@ class InventoryService {
   async deleteCategory(id) {
     const category = await inventoryCategoryRepository.findById(id);
     if (!category) {
-      throw new Error('Category not found');
+      throw new NotFoundError('Category not found');
     }
 
     // Check if category has items
     const items = await inventoryItemRepository.findAll({ category_id: id });
     if (items.length > 0) {
-      throw new Error('Cannot delete category with existing items');
+      throw new ConflictError('Cannot delete a category that still has items', 'IN_USE');
     }
 
     await inventoryCategoryRepository.softDelete(id);
@@ -116,7 +149,7 @@ class InventoryService {
   async getItemById(id) {
     const item = await inventoryItemRepository.findByIdWithCategory(id);
     if (!item) {
-      throw new Error('Item not found');
+      throw new NotFoundError('Item not found');
     }
     return item;
   }
@@ -129,7 +162,7 @@ class InventoryService {
   async getItemByCode(itemCode) {
     const item = await inventoryItemRepository.findByItemCode(itemCode);
     if (!item) {
-      throw new Error('Item not found');
+      throw new NotFoundError('Item not found');
     }
     return item;
   }
@@ -139,34 +172,49 @@ class InventoryService {
    * @param {Object} data - Item data
    * @returns {Promise<Object>} Created item
    */
-  async createItem(data) {
-    // Verify category exists
+  async createItem(data, userId) {
     const category = await inventoryCategoryRepository.findById(data.category_id);
     if (!category) {
-      throw new Error('Category not found');
+      throw new NotFoundError('Category not found');
     }
 
-    // Check for duplicate name in category
-    const existing = await inventoryItemRepository.findByNameInCategory(
-      data.name,
-      data.category_id
-    );
+    const existing = await inventoryItemRepository.findByNameInCategory(data.name, data.category_id);
     if (existing) {
-      throw new Error('Item with this name already exists in this category');
+      throw new ConflictError('Item with this name already exists in this category', 'DUPLICATE');
     }
 
-    // Generate item code
-    const prefix = InventoryService.CATEGORY_PREFIXES[category.name] || 'INV';
-    const itemCode = await inventoryItemRepository.getNextItemCode(prefix);
+    const openingStock = data.current_stock ? toQuantity(data.current_stock) : 0;
+    if (openingStock < 0) {
+      throw new ValidationError('Opening stock cannot be negative');
+    }
 
-    const itemData = {
-      ...data,
-      item_code: itemCode,
-      current_stock: data.current_stock || 0,
-      minimum_stock: data.minimum_stock || 0,
-    };
+    return db.tx(async (t) => {
+      const prefix = InventoryService.CATEGORY_PREFIXES[category.name] || 'INV';
+      const item = await inventoryItemRepository.create(
+        {
+          ...data,
+          item_code: await inventoryItemRepository.getNextItemCode(prefix, t),
+          minimum_stock: data.minimum_stock || 0,
+        },
+        t
+      );
 
-    return await inventoryItemRepository.create(itemData);
+      // Opening stock goes through the ledger like any other stock change
+      if (openingStock > 0) {
+        await this.recordTransaction(
+          {
+            item_id: item.id,
+            transaction_type: INVENTORY_TRANSACTION_TYPES.ADJUSTMENT,
+            quantity: openingStock,
+            notes: 'Opening stock',
+          },
+          userId,
+          t
+        );
+        return inventoryItemRepository.findById(item.id, t);
+      }
+      return item;
+    });
   }
 
   /**
@@ -176,16 +224,17 @@ class InventoryService {
    * @returns {Promise<Object>} Updated item
    */
   async updateItem(id, data) {
+    id = Number(id);
     const item = await inventoryItemRepository.findById(id);
     if (!item) {
-      throw new Error('Item not found');
+      throw new NotFoundError('Item not found');
     }
 
     // If changing category, verify it exists
     if (data.category_id && data.category_id !== item.category_id) {
       const category = await inventoryCategoryRepository.findById(data.category_id);
       if (!category) {
-        throw new Error('Category not found');
+        throw new NotFoundError('Category not found');
       }
     }
 
@@ -194,15 +243,14 @@ class InventoryService {
       const categoryId = data.category_id || item.category_id;
       const existing = await inventoryItemRepository.findByNameInCategory(data.name, categoryId);
       if (existing && existing.id !== id) {
-        throw new Error('Item with this name already exists in this category');
+        throw new ConflictError('Item with this name already exists in this category', 'DUPLICATE');
       }
     }
 
-    // Don't allow direct stock updates through this method
-    delete data.current_stock;
-    delete data.item_code;
+    // Stock only changes through the ledger, and codes are permanent
+    const { current_stock: _stock, item_code: _code, ...changes } = data;
 
-    return await inventoryItemRepository.update(id, data);
+    return await inventoryItemRepository.update(id, changes);
   }
 
   /**
@@ -212,7 +260,7 @@ class InventoryService {
   async deleteItem(id) {
     const item = await inventoryItemRepository.findById(id);
     if (!item) {
-      throw new Error('Item not found');
+      throw new NotFoundError('Item not found');
     }
 
     await inventoryItemRepository.softDelete(id);
@@ -251,69 +299,70 @@ class InventoryService {
   // ==================== INVENTORY TRANSACTIONS ====================
 
   /**
-   * Record an inventory transaction
-   * @param {Object} data - Transaction data
-   * @param {number} userId - User ID who created the transaction
-   * @returns {Promise<Object>} Created transaction
+   * Record a stock movement: one ledger row plus the matching stock change,
+   * atomically. The item row is locked first, so concurrent movements on the
+   * same item run one after another and each sees the stock the previous left.
+   *
+   * `quantity` is a positive amount; the type decides the direction. An
+   * adjustment is signed (+ adds, - removes).
+   *
+   * @param {Object} data - item_id, transaction_type, quantity, unit_cost?, total_cost?,
+   *   reference_type?, reference_id?, notes?, transaction_date?, inventory_batch_id?
+   * @param {number} userId - User recording the movement
+   * @param {Object} [t] - Outer transaction to join
+   * @returns {Promise<Object>} Created ledger row with item info
+   * @throws {ConflictError} INSUFFICIENT_STOCK when stock would go negative (nothing is written)
    */
-  async recordTransaction(data, userId) {
-    // Verify item exists
-    const item = await inventoryItemRepository.findById(data.item_id);
-    if (!item) {
-      throw new Error('Item not found');
+  async recordTransaction(data, userId, t) {
+    const type = data.transaction_type;
+    if (!Object.values(INVENTORY_TRANSACTION_TYPES).includes(type)) {
+      throw new ValidationError('Invalid transaction type');
     }
 
-    // Calculate total cost if not provided
-    const unitCost = data.unit_cost || item.cost_per_unit || 0;
-    const totalCost = data.total_cost || (unitCost * Math.abs(data.quantity));
-
-    // Determine stock change based on transaction type
-    let stockChange = 0;
-    switch (data.transaction_type) {
-      case INVENTORY_TRANSACTION_TYPES.PURCHASE:
-      case INVENTORY_TRANSACTION_TYPES.RETURN:
-        stockChange = Math.abs(data.quantity);
-        break;
-      case INVENTORY_TRANSACTION_TYPES.USAGE:
-      case INVENTORY_TRANSACTION_TYPES.EXPIRED:
-      case INVENTORY_TRANSACTION_TYPES.TRANSFER:
-        stockChange = -Math.abs(data.quantity);
-        // Verify sufficient stock
-        if (item.current_stock + stockChange < 0) {
-          throw new Error('Insufficient stock for this transaction');
-        }
-        break;
-      case INVENTORY_TRANSACTION_TYPES.ADJUSTMENT:
-        // Adjustment can be positive or negative
-        stockChange = data.quantity;
-        if (item.current_stock + stockChange < 0) {
-          throw new Error('Adjustment would result in negative stock');
-        }
-        break;
-      default:
-        throw new Error('Invalid transaction type');
+    const quantity = toQuantity(data.quantity);
+    const isAdjustment = type === INVENTORY_TRANSACTION_TYPES.ADJUSTMENT;
+    if (isAdjustment ? quantity === 0 : quantity <= 0) {
+      throw new ValidationError(isAdjustment ? 'Adjustment quantity cannot be zero' : 'Quantity must be greater than zero');
     }
+    const change = INVENTORY_OUTGOING_TYPES.includes(type) ? -quantity : quantity;
 
-    const transactionData = {
-      item_id: data.item_id,
-      transaction_type: data.transaction_type,
-      quantity: data.quantity,
-      unit_cost: unitCost,
-      total_cost: totalCost,
-      reference_type: data.reference_type || null,
-      reference_id: data.reference_id || null,
-      notes: data.notes || null,
-      transaction_date: data.transaction_date || new Date(),
-      created_by: userId,
-    };
+    return (t || db).tx(async (tx) => {
+      const item = await inventoryItemRepository.findByIdForUpdate(data.item_id, tx);
+      if (!item) {
+        throw new NotFoundError('Item not found');
+      }
 
-    // Create transaction
-    const transaction = await inventoryTransactionRepository.createWithItemInfo(transactionData);
+      const stockBefore = item.current_stock;
+      const stockAfter = fromHundredths(toHundredths(stockBefore) + toHundredths(change));
+      if (stockAfter < 0) {
+        throw insufficientStock(stockBefore, Math.abs(change), item.unit);
+      }
 
-    // Update stock level
-    await inventoryItemRepository.updateStock(data.item_id, stockChange);
+      const unitCost = data.unit_cost ?? item.cost_per_unit ?? null;
+      const totalCost = data.total_cost ?? (unitCost === null ? null : fromHundredths(Math.round(unitCost * Math.abs(quantity) * 100)));
 
-    return transaction;
+      const transaction = await inventoryTransactionRepository.createWithItemInfo(
+        {
+          item_id: item.id,
+          inventory_batch_id: data.inventory_batch_id,
+          transaction_type: type,
+          quantity,
+          unit_cost: unitCost,
+          total_cost: totalCost,
+          reference_type: data.reference_type || null,
+          reference_id: data.reference_id || null,
+          notes: data.notes || null,
+          transaction_date: data.transaction_date,
+          created_by: userId,
+          stock_before: stockBefore,
+          stock_after: stockAfter,
+        },
+        tx
+      );
+      await inventoryItemRepository.setStock(item.id, stockAfter, tx);
+
+      return transaction;
+    });
   }
 
   /**
@@ -326,7 +375,7 @@ class InventoryService {
     // Verify item exists
     const item = await inventoryItemRepository.findById(itemId);
     if (!item) {
-      throw new Error('Item not found');
+      throw new NotFoundError('Item not found');
     }
 
     return await inventoryTransactionRepository.findByItemId(itemId, filters);
@@ -366,7 +415,7 @@ class InventoryService {
     // Verify item exists
     const item = await inventoryItemRepository.findByIdWithCategory(itemId);
     if (!item) {
-      throw new Error('Item not found');
+      throw new NotFoundError('Item not found');
     }
 
     const report = await inventoryTransactionRepository.getUsageReport(itemId, dateFrom, dateTo);
@@ -439,7 +488,7 @@ class InventoryService {
   async getUnitById(id) {
     const unit = await unitOfMeasureRepository.findById(id);
     if (!unit) {
-      throw new Error('Unit of measure not found');
+      throw new NotFoundError('Unit of measure not found');
     }
     return unit;
   }
@@ -453,7 +502,7 @@ class InventoryService {
     // Check for duplicate symbol
     const existing = await unitOfMeasureRepository.findBySymbol(data.symbol);
     if (existing) {
-      throw new Error('Unit with this symbol already exists');
+      throw new ConflictError('Unit with this symbol already exists', 'DUPLICATE');
     }
     return await unitOfMeasureRepository.create(data);
   }
@@ -467,13 +516,13 @@ class InventoryService {
   async updateUnit(id, data) {
     const unit = await unitOfMeasureRepository.findById(id);
     if (!unit) {
-      throw new Error('Unit of measure not found');
+      throw new NotFoundError('Unit of measure not found');
     }
 
     if (data.symbol && data.symbol !== unit.symbol) {
       const existing = await unitOfMeasureRepository.findBySymbol(data.symbol);
       if (existing) {
-        throw new Error('Unit with this symbol already exists');
+        throw new ConflictError('Unit with this symbol already exists', 'DUPLICATE');
       }
     }
 
@@ -487,7 +536,7 @@ class InventoryService {
   async deleteUnit(id) {
     const unit = await unitOfMeasureRepository.findById(id);
     if (!unit) {
-      throw new Error('Unit of measure not found');
+      throw new NotFoundError('Unit of measure not found');
     }
     await unitOfMeasureRepository.softDelete(id);
   }
@@ -510,7 +559,7 @@ class InventoryService {
   async convertUnits(quantity, fromUnitId, toUnitId) {
     const result = await unitOfMeasureRepository.convertQuantity(quantity, fromUnitId, toUnitId);
     if (result === null) {
-      throw new Error('Cannot convert between these units (different categories)');
+      throw new ValidationError('Cannot convert between these units (different categories)');
     }
     return result;
   }
@@ -526,7 +575,7 @@ class InventoryService {
   async getItemBatches(itemId, options = {}) {
     const item = await inventoryItemRepository.findById(itemId);
     if (!item) {
-      throw new Error('Item not found');
+      throw new NotFoundError('Item not found');
     }
     return await inventoryBatchRepository.findByItemId(itemId, options);
   }
@@ -539,7 +588,7 @@ class InventoryService {
   async getBatchById(id) {
     const batch = await inventoryBatchRepository.findById(id);
     if (!batch) {
-      throw new Error('Batch not found');
+      throw new NotFoundError('Batch not found');
     }
     return batch;
   }
@@ -552,7 +601,7 @@ class InventoryService {
   async getBatchByNumber(batchNumber) {
     const batch = await inventoryBatchRepository.findByBatchNumber(batchNumber);
     if (!batch) {
-      throw new Error('Batch not found');
+      throw new NotFoundError('Batch not found');
     }
     return batch;
   }
@@ -564,35 +613,36 @@ class InventoryService {
    * @returns {Promise<Object>} Created batch
    */
   async createBatch(data, userId) {
-    const item = await inventoryItemRepository.findById(data.inventory_item_id);
-    if (!item) {
-      throw new Error('Item not found');
+    const quantity = toQuantity(data.quantity);
+    if (quantity <= 0) {
+      throw new ValidationError('Quantity must be greater than zero');
     }
 
-    const batchData = {
-      ...data,
-      created_by: userId,
-    };
+    return db.tx(async (t) => {
+      const item = await inventoryItemRepository.findByIdForUpdate(data.inventory_item_id, t);
+      if (!item) {
+        throw new NotFoundError('Item not found');
+      }
 
-    const batch = await inventoryBatchRepository.create(batchData);
+      const batch = await inventoryBatchRepository.createWithQuantity({ ...data, quantity, created_by: userId }, t);
 
-    // Update item's current stock
-    await inventoryItemRepository.updateStock(data.inventory_item_id, data.quantity);
+      // The purchase row adds the batch's quantity to the item's stock
+      await this.recordTransaction(
+        {
+          item_id: item.id,
+          inventory_batch_id: batch.id,
+          transaction_type: INVENTORY_TRANSACTION_TYPES.PURCHASE,
+          quantity,
+          unit_cost: data.unit_cost,
+          notes: `Batch ${batch.batch_number} received`,
+          transaction_date: data.received_date,
+        },
+        userId,
+        t
+      );
 
-    // Record transaction
-    await this.recordTransaction(
-      {
-        item_id: data.inventory_item_id,
-        transaction_type: INVENTORY_TRANSACTION_TYPES.PURCHASE,
-        quantity: data.quantity,
-        unit_cost: data.unit_cost,
-        notes: `Batch ${batch.batch_number} received`,
-        transaction_date: data.received_date || new Date(),
-      },
-      userId
-    );
-
-    return batch;
+      return batch;
+    });
   }
 
   /**
@@ -604,14 +654,13 @@ class InventoryService {
   async updateBatch(id, data) {
     const batch = await inventoryBatchRepository.findById(id);
     if (!batch) {
-      throw new Error('Batch not found');
+      throw new NotFoundError('Batch not found');
     }
 
-    // Don't allow direct quantity updates - use transactions
-    delete data.quantity;
-    delete data.initial_quantity;
+    // Quantities only change through the ledger
+    const { quantity: _quantity, initial_quantity: _initial, inventory_item_id: _item, ...changes } = data;
 
-    return await inventoryBatchRepository.update(id, data);
+    return await inventoryBatchRepository.update(id, changes);
   }
 
   /**
@@ -621,11 +670,11 @@ class InventoryService {
   async deleteBatch(id) {
     const batch = await inventoryBatchRepository.findById(id);
     if (!batch) {
-      throw new Error('Batch not found');
+      throw new NotFoundError('Batch not found');
     }
 
     if (batch.quantity > 0) {
-      throw new Error('Cannot delete batch with remaining quantity');
+      throw new ConflictError('Cannot delete a batch that still has stock', 'HAS_STOCK');
     }
 
     await inventoryBatchRepository.softDelete(id);
@@ -664,7 +713,7 @@ class InventoryService {
   async getBatchSummary(itemId) {
     const item = await inventoryItemRepository.findById(itemId);
     if (!item) {
-      throw new Error('Item not found');
+      throw new NotFoundError('Item not found');
     }
     return await inventoryBatchRepository.getBatchSummary(itemId);
   }
@@ -679,45 +728,104 @@ class InventoryService {
   }
 
   /**
-   * Use stock from batches (FEFO - First Expiry First Out)
+   * Use stock from batches, first expiry first out. Locks the item and its
+   * usable batches, checks the batches can cover the whole quantity BEFORE
+   * changing anything, then writes one usage ledger row per batch drawn from.
+   *
    * @param {number} itemId - Item ID
-   * @param {number} quantity - Quantity to use
-   * @param {Object} options - Options (reference_type, reference_id, notes)
+   * @param {number} quantity - Quantity to use (> 0)
+   * @param {Object} options - reference_type, reference_id, notes, transaction_date
    * @param {number} userId - User ID
-   * @returns {Promise<Object>} Transaction and deduction details
+   * @param {Object} [t] - Outer transaction to join
+   * @returns {Promise<Object>} { transactions, batch_deductions, current_stock }
+   * @throws {ConflictError} INSUFFICIENT_STOCK when the batches cannot cover it (nothing is written)
    */
-  async useStockFromBatches(itemId, quantity, options = {}, userId) {
-    const item = await inventoryItemRepository.findById(itemId);
-    if (!item) {
-      throw new Error('Item not found');
+  async useStockFromBatches(itemId, quantity, options = {}, userId, t) {
+    const requested = toQuantity(quantity);
+    if (requested <= 0) {
+      throw new ValidationError('Quantity must be greater than zero');
     }
 
-    if (item.current_stock < quantity) {
-      throw new Error(`Insufficient stock. Available: ${item.current_stock}, Requested: ${quantity}`);
-    }
+    return (t || db).tx(async (tx) => {
+      const item = await inventoryItemRepository.findByIdForUpdate(itemId, tx);
+      if (!item) {
+        throw new NotFoundError('Item not found');
+      }
 
-    // Deduct from batches using FEFO
-    const deductions = await inventoryBatchRepository.deductQuantityFEFO(itemId, quantity);
+      const batches = await inventoryBatchRepository.lockAvailableForItem(item.id, tx);
+      const available = batches.reduce((sum, batch) => sum + toHundredths(batch.quantity), 0);
+      let remaining = toHundredths(requested);
+      if (available < remaining) {
+        throw insufficientStock(fromHundredths(available), requested, item.unit);
+      }
+      if (toHundredths(item.current_stock) < remaining) {
+        // Batches claim more than the item holds: the data needs reconciling
+        throw insufficientStock(item.current_stock, requested, item.unit);
+      }
 
-    // Update item's current stock
-    await inventoryItemRepository.updateStock(itemId, -quantity);
+      let stock = toHundredths(item.current_stock);
+      const transactions = [];
+      const deductions = [];
 
-    // Record transaction
-    const transaction = await inventoryTransactionRepository.createWithItemInfo({
-      item_id: itemId,
-      transaction_type: INVENTORY_TRANSACTION_TYPES.USAGE,
-      quantity: -quantity,
-      reference_type: options.reference_type,
-      reference_id: options.reference_id,
-      notes: options.notes || `Used from ${deductions.length} batch(es)`,
-      transaction_date: new Date(),
-      created_by: userId,
+      for (const batch of batches) {
+        if (remaining === 0) break;
+
+        const take = Math.min(toHundredths(batch.quantity), remaining);
+        const left = toHundredths(batch.quantity) - take;
+        await inventoryBatchRepository.setQuantity(batch.id, fromHundredths(left), tx);
+
+        const unitCost = batch.unit_cost ?? item.cost_per_unit ?? null;
+        transactions.push(
+          await inventoryTransactionRepository.createWithItemInfo(
+            {
+              item_id: item.id,
+              inventory_batch_id: batch.id,
+              transaction_type: INVENTORY_TRANSACTION_TYPES.USAGE,
+              quantity: fromHundredths(take),
+              unit_cost: unitCost,
+              total_cost: unitCost === null ? null : fromHundredths(Math.round(unitCost * take)),
+              reference_type: options.reference_type || null,
+              reference_id: options.reference_id || null,
+              notes: options.notes || `Used from batch ${batch.batch_number}`,
+              transaction_date: options.transaction_date,
+              created_by: userId,
+              stock_before: fromHundredths(stock),
+              stock_after: fromHundredths(stock - take),
+            },
+            tx
+          )
+        );
+        deductions.push({
+          batch_id: batch.id,
+          batch_number: batch.batch_number,
+          quantity_deducted: fromHundredths(take),
+          remaining_in_batch: fromHundredths(left),
+        });
+
+        stock -= take;
+        remaining -= take;
+      }
+
+      await inventoryItemRepository.setStock(item.id, fromHundredths(stock), tx);
+
+      return { transactions, batch_deductions: deductions, current_stock: fromHundredths(stock) };
     });
+  }
 
-    return {
-      transaction,
-      batch_deductions: deductions,
-    };
+  // ==================== INTEGRITY ====================
+
+  /**
+   * Check stock against its history
+   * @returns {Promise<Object>} { ledger, batches }: items whose current_stock differs from
+   *   the sum of their ledger, and items whose batches hold more than current_stock.
+   *   Both empty when consistent.
+   */
+  async findStockDrift() {
+    const [ledger, batches] = await Promise.all([
+      inventoryTransactionRepository.findStockDrift(),
+      inventoryBatchRepository.findItemsWithExcessBatchStock(),
+    ]);
+    return { ledger, batches };
   }
 }
 

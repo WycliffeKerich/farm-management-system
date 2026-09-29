@@ -120,7 +120,7 @@ class InventoryController {
    */
   async createItem(req, res, next) {
     try {
-      const item = await inventoryService.createItem(req.body);
+      const item = await inventoryService.createItem(req.body, req.user.id);
       res.status(201).json({ success: true, data: item });
     } catch (error) {
       next(error);
@@ -187,6 +187,24 @@ class InventoryController {
     try {
       const transaction = await inventoryService.recordTransaction(req.body, req.user.id);
       res.status(201).json({ success: true, data: transaction });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Use stock from an item's batches, earliest expiry first
+   */
+  async useStock(req, res, next) {
+    try {
+      const { quantity, reference_type, reference_id, notes, transaction_date } = req.body;
+      const result = await inventoryService.useStockFromBatches(
+        req.params.id,
+        quantity,
+        { reference_type, reference_id, notes, transaction_date },
+        req.user.id
+      );
+      res.status(201).json({ success: true, data: result });
     } catch (error) {
       next(error);
     }

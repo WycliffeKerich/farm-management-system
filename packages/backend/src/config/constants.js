@@ -104,7 +104,13 @@ module.exports = {
     RETURN: 'return',
     EXPIRED: 'expired',
     TRANSFER: 'transfer',
+    WASTE: 'waste',
   },
+
+  // Ledger quantities are magnitudes; these types add to stock, the others
+  // (except the signed 'adjustment') remove from it
+  INVENTORY_INCOMING_TYPES: ['purchase', 'return'],
+  INVENTORY_OUTGOING_TYPES: ['usage', 'expired', 'transfer', 'waste'],
 
   // Inventory reference types (for linking transactions to other entities)
   INVENTORY_REFERENCE_TYPES: {

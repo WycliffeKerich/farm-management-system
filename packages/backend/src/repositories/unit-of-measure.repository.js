@@ -5,7 +5,10 @@ const BaseRepository = require('./base.repository');
  */
 class UnitOfMeasureRepository extends BaseRepository {
   constructor() {
-    super('units_of_measure');
+    super('units_of_measure', {
+      columns: ['name', 'symbol', 'category', 'base_unit_id', 'conversion_factor', 'description', 'is_active'],
+      sortable: ['name', 'symbol', 'category'],
+    });
   }
 
   /**
