@@ -355,6 +355,24 @@ describe('withdrawal holds on produce and sales', () => {
     expect((await post(`/individuals/${cow.id}/sale`, { sale_date: '2026-03-16' })).status).toBe(200);
   });
 
+  it('refuses selling from a group through a removal inside its meat withdrawal period', async () => {
+    const flock = await createGroup();
+    await post('/diseases-treatments', {
+      animal_group_id: flock.id,
+      diagnosis_date: '2026-03-01',
+      disease_name: 'Coccidiosis',
+      doses: [{ product_name: 'Amprolium', unit: 'g', quantity: 50, meat_withdrawal_days: 7 }],
+    });
+    const remove = (body) => post(`/groups/${flock.id}/removal`, { quantity: 1, ...body });
+
+    const sale = await remove({ type: 'sale', adjustment_date: '2026-03-05' });
+    expect(sale.status).toBe(409);
+    expect(sale.body.error).toMatchObject({ code: 'WITHDRAWAL_ACTIVE', details: { safe_from: '2026-03-08' } });
+
+    expect((await remove({ type: 'transfer_out', adjustment_date: '2026-03-05' })).status).toBe(201);
+    expect((await remove({ type: 'sale', adjustment_date: '2026-03-08' })).status).toBe(201);
+  });
+
   it('lists what is held on a date', async () => {
     const batch = await createBatch();
     await request(app).post(`/api/v1/crops/batches/${batch.id}/input-applications`).set(worker.auth).send({

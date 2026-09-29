@@ -424,21 +424,22 @@ class AnimalService {
       throw new NotFoundError('Animal not found');
     }
     if (status === 'sold' && animal.status !== 'sold') {
-      await this.assertNoMeatWithdrawal(animal.id, statusDate);
+      await this.assertNoMeatWithdrawal('animal', animal.id, statusDate);
     }
     return await animalRepository.updateStatus(id, status, statusDate);
   }
 
   /**
-   * Marking an animal sold without a sale record leaves nowhere to keep an
-   * owner's override, so inside a meat withdrawal period it is refused
-   * outright (409 WITHDRAWAL_ACTIVE). The owner overrides by recording the
-   * sale itself (POST /animals/sales).
-   * @param {number} id - Animal ID
+   * Selling an animal, or animals from a group, without a sale record leaves
+   * nowhere to keep an owner's override, so inside a meat withdrawal period it
+   * is refused outright (409 WITHDRAWAL_ACTIVE). The owner overrides by
+   * recording the sale itself (POST /animals/sales).
+   * @param {string} referenceType - 'animal' or 'animal_group'
+   * @param {number} id - Animal or group ID
    * @param {string|Date} date - Sale date
    */
-  async assertNoMeatWithdrawal(id, date) {
-    await withdrawalService.checkSale({ reference_type: 'animal', reference_id: id, sale_date: date }, {});
+  async assertNoMeatWithdrawal(referenceType, id, date) {
+    await withdrawalService.checkSale({ reference_type: referenceType, reference_id: id, sale_date: date }, {});
   }
 
   /**
@@ -455,7 +456,7 @@ class AnimalService {
     if (animal.status !== 'active') {
       throw new ConflictError('Can only sell active animals');
     }
-    await this.assertNoMeatWithdrawal(animal.id, saleDate);
+    await this.assertNoMeatWithdrawal('animal', animal.id, saleDate);
     return await animalRepository.recordSale(id, saleDate);
   }
 
@@ -644,8 +645,13 @@ class AnimalService {
       throw new ValidationError('Cannot remove more animals than currently in group');
     }
 
+    const adjustmentDate = data.adjustment_date || new Date();
+    if (data.type === 'sale') {
+      await this.assertNoMeatWithdrawal('animal_group', groupId, adjustmentDate);
+    }
+
     return await animalGroupRepository.recordRemoval(groupId, data.quantity, data.type || 'removal', {
-      adjustment_date: data.adjustment_date || new Date(),
+      adjustment_date: adjustmentDate,
       reason: data.reason,
       unit_value: data.unit_value,
       total_value: data.total_value,
