@@ -228,9 +228,18 @@ const inventoryValidators = {
     query('low_stock')
       .optional()
       .isBoolean().withMessage('low_stock must be a boolean'),
+    query('stock_status')
+      .optional()
+      .isIn(['low', 'out', 'ok']).withMessage('stock_status must be low, out or ok'),
     query('expiring_days')
       .optional()
       .isInt({ min: 1 }).withMessage('expiring_days must be a positive integer'),
+    query('sort')
+      .optional()
+      .matches(/^[a-z_]+$/).withMessage('sort must be a column name'),
+    query('order')
+      .optional()
+      .isIn(['asc', 'desc']).withMessage('order must be asc or desc'),
   ],
 
   transactionFilters: [

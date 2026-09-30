@@ -6,6 +6,7 @@ import { useToast } from 'primevue/usetoast';
 import inventoryService from '@/services/inventory.service';
 import PurchaseDialog from '@/components/inventory/PurchaseDialog.vue';
 import ItemSupplyFields from '@/components/inventory/ItemSupplyFields.vue';
+import { useLazyTable } from '@/composables/useLazyTable';
 import { useSupplierOptions } from '@/composables/useSupplierOptions';
 import { useAuthStore } from '@/stores/auth.store';
 import { daysUntil, fromApiDate, toApiDate } from '@/utils/dates';
@@ -21,25 +22,37 @@ const authStore = useAuthStore();
 const canManage = computed(() => authStore.hasRole(['owner', 'manager']));
 const { suppliers, load: loadSuppliers } = useSupplierOptions();
 
+// Items are paged, sorted and filtered by the server
+const {
+    data: items,
+    body: itemsBody,
+    totalRecords,
+    loading,
+    first,
+    rows,
+    sortField,
+    sortOrder,
+    filters,
+    load: loadItems,
+    onPage,
+    onSort
+} = useLazyTable(inventoryService.getItems, {
+    rows: 10,
+    sortField: 'name',
+    filters: { search: '', category_id: null, stock_status: route.query.low_stock === 'true' ? 'low' : null },
+    onError: (error) => toast.add({ severity: 'error', summary: 'Error', detail: validationMessage(error, 'Failed to load items'), life: 3000 })
+});
+
 // State
-const loading = ref(false);
 const saving = ref(false);
 const submitted = ref(false);
 const transactionSubmitted = ref(false);
-const items = ref([]);
 const categories = ref([]);
 const itemDialog = ref(false);
 const transactionDialog = ref(false);
 const editingItem = ref(null);
 const selectedItem = ref(null);
 const purchaseDialog = ref(false);
-
-// Filters
-const filters = ref({
-    search: '',
-    category_id: null,
-    stock_status: null
-});
 
 // Forms
 const emptyItemForm = () => ({
@@ -64,6 +77,7 @@ const transactionForm = ref({
 });
 
 // Options
+/** The server's stock levels: low is at or below a set minimum, including items that have run out */
 const stockStatusOptions = [
     { label: 'Low Stock', value: 'low' },
     { label: 'Out of Stock', value: 'out' },
@@ -79,22 +93,13 @@ const stockStatus = (item) => {
     return 'ok';
 };
 
-/** Same rule as the low-stock endpoint, so the dashboard link shows the same items */
-const needsRestock = (item) => item.minimum_stock > 0 && item.current_stock <= item.minimum_stock;
+/** Counts at each stock level for the search and category, whatever level is picked */
+const statistics = computed(() => itemsBody.value?.stock_counts || { total: 0, ok: 0, low: 0, out: 0 });
 
-/** The item list is small and unpaged, so stock levels are filtered here */
-const filteredItems = computed(() => {
-    const status = filters.value.stock_status;
-    if (!status) return items.value;
-    if (status === 'low') return items.value.filter(needsRestock);
-    return items.value.filter((item) => stockStatus(item) === status);
-});
-
-const statistics = computed(() => {
-    const counts = { total: items.value.length, ok: 0, low: 0, out: 0 };
-    items.value.forEach((item) => counts[stockStatus(item)]++);
-    return counts;
-});
+/** The cards filter the list to their stock level; picking the same card again clears it */
+const filterByStock = (status) => {
+    filters.value.stock_status = filters.value.stock_status === status ? null : status;
+};
 
 const isReducingStock = computed(() => isReducingMovement(transactionForm.value.movement));
 
@@ -104,22 +109,6 @@ const maxTransactionQuantity = computed(() => {
 });
 
 // Methods
-const loadItems = async () => {
-    loading.value = true;
-    try {
-        const params = {};
-        if (filters.value.search) params.search = filters.value.search;
-        if (filters.value.category_id) params.category_id = filters.value.category_id;
-
-        const response = await inventoryService.getItems(params);
-        items.value = response.data.data || [];
-    } catch (error) {
-        toast.add({ severity: 'error', summary: 'Error', detail: validationMessage(error, 'Failed to load items'), life: 3000 });
-    } finally {
-        loading.value = false;
-    }
-};
-
 const loadCategories = async () => {
     try {
         const response = await inventoryService.getCategories();
@@ -265,19 +254,8 @@ const isExpiringSoon = (date) => {
     return days !== null && days >= 0 && days <= 30;
 };
 
-let searchTimeout = null;
-const debouncedSearch = () => {
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => {
-        loadItems();
-    }, 300);
-};
-
 // Lifecycle
 onMounted(() => {
-    if (route.query.low_stock === 'true') {
-        filters.value.stock_status = 'low';
-    }
     loadItems();
     loadCategories();
     if (canManage.value) loadSuppliers();
@@ -297,15 +275,16 @@ onMounted(() => {
         <!-- Filters -->
         <div class="flex flex-col md:flex-row gap-4 mb-6">
             <div class="flex-1">
-                <InputText v-model="filters.search" placeholder="Search by name or code..." class="w-full" @input="debouncedSearch" />
+                <InputText v-model="filters.search" placeholder="Search by name or code..." class="w-full" />
             </div>
-            <Select v-model="filters.category_id" :options="categories" optionLabel="name" optionValue="id" placeholder="All Categories" class="w-full md:w-48" showClear @change="loadItems" />
+            <Select v-model="filters.category_id" :options="categories" optionLabel="name" optionValue="id" placeholder="All Categories" class="w-full md:w-48" showClear />
             <Select v-model="filters.stock_status" :options="stockStatusOptions" optionLabel="label" optionValue="value" placeholder="All Stock Levels" class="w-full md:w-48" showClear />
         </div>
 
         <!-- Statistics Cards -->
+        <!-- Statistics Cards: each one filters the list to its stock level -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+            <button type="button" class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg text-left cursor-pointer" :class="{ 'ring-2 ring-blue-400': !filters.stock_status }" @click="filters.stock_status = null">
                 <div class="flex items-center justify-between">
                     <div>
                         <p class="text-blue-600 dark:text-blue-400 text-sm font-medium">Total Items</p>
@@ -313,8 +292,8 @@ onMounted(() => {
                     </div>
                     <i class="pi pi-box text-3xl text-blue-400"></i>
                 </div>
-            </div>
-            <div class="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+            </button>
+            <button type="button" class="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg text-left cursor-pointer" :class="{ 'ring-2 ring-green-400': filters.stock_status === 'ok' }" @click="filterByStock('ok')">
                 <div class="flex items-center justify-between">
                     <div>
                         <p class="text-green-600 dark:text-green-400 text-sm font-medium">Well Stocked</p>
@@ -322,8 +301,8 @@ onMounted(() => {
                     </div>
                     <i class="pi pi-check-circle text-3xl text-green-400"></i>
                 </div>
-            </div>
-            <div class="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg">
+            </button>
+            <button type="button" class="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg text-left cursor-pointer" :class="{ 'ring-2 ring-yellow-400': filters.stock_status === 'low' }" @click="filterByStock('low')">
                 <div class="flex items-center justify-between">
                     <div>
                         <p class="text-yellow-600 dark:text-yellow-400 text-sm font-medium">Low Stock</p>
@@ -331,8 +310,8 @@ onMounted(() => {
                     </div>
                     <i class="pi pi-exclamation-triangle text-3xl text-yellow-400"></i>
                 </div>
-            </div>
-            <div class="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
+            </button>
+            <button type="button" class="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg text-left cursor-pointer" :class="{ 'ring-2 ring-red-400': filters.stock_status === 'out' }" @click="filterByStock('out')">
                 <div class="flex items-center justify-between">
                     <div>
                         <p class="text-red-600 dark:text-red-400 text-sm font-medium">Out of Stock</p>
@@ -340,11 +319,27 @@ onMounted(() => {
                     </div>
                     <i class="pi pi-times-circle text-3xl text-red-400"></i>
                 </div>
-            </div>
+            </button>
         </div>
 
         <!-- Data Table -->
-        <DataTable :value="filteredItems" :loading="loading" :paginator="true" :rows="10" :rowsPerPageOptions="[10, 20, 50]" stripedRows responsiveLayout="scroll" class="p-datatable-sm">
+        <DataTable
+            :value="items"
+            :loading="loading"
+            lazy
+            paginator
+            :first="first"
+            :rows="rows"
+            :totalRecords="totalRecords"
+            :sortField="sortField"
+            :sortOrder="sortOrder"
+            :rowsPerPageOptions="[10, 20, 50]"
+            stripedRows
+            responsiveLayout="scroll"
+            class="p-datatable-sm"
+            @page="onPage"
+            @sort="onSort"
+        >
             <template #empty>
                 <div class="text-center py-8">
                     <i class="pi pi-inbox text-4xl text-surface-400 mb-4"></i>

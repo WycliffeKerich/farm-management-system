@@ -298,10 +298,16 @@ class InventoryService {
    * @param {number} page - Page number
    * @param {number} limit - Records per page
    * @param {Object} filters - Filters
-   * @returns {Promise<Object>} Paginated results
+   * @param {Object} [sort] - { field, order }
+   * @returns {Promise<Object>} Paginated results, with stock_counts: how many of the
+   *   matching items are at each stock level, whatever the stock level filter
    */
-  async paginateItems(page, limit, filters) {
-    return await inventoryItemRepository.paginateWithFilters(page, limit, filters);
+  async paginateItems(page, limit, filters, sort) {
+    const [result, stockCounts] = await Promise.all([
+      inventoryItemRepository.paginateWithFilters(page, limit, filters, sort),
+      inventoryItemRepository.countByStockStatus(filters),
+    ]);
+    return { ...result, stock_counts: stockCounts };
   }
 
   // ==================== STOCK MANAGEMENT ====================

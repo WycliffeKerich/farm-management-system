@@ -458,14 +458,25 @@ Follow-ups (carried into Phase 4):
      - Reorder: one order per supplier, a copy-order text to send them, and receiving straight from the list.
      - Expiring: expired and expiring stock, with the value at risk.
    - The dashboard links to the reorder and expiring tabs.
-4. Adopt `useLazyTable` for the inventory lists (server-side pagination).
+4. ~~Adopt `useLazyTable` for the inventory lists (server-side pagination).~~ Done.
+   - `composables/useLazyTable.js` drives a PrimeVue DataTable in lazy mode. It sends page, limit, `sort` and `order`, and the filters that are set. A filter change goes back to page 1 and reloads after 300 ms. A response to an older request is dropped, and a page emptied by a delete steps back one page.
+   - `GET /inventory/items` (paged) adds three things:
+     - A `stock_status` filter of `low`, `out` or `ok`. `low` is the reorder rule, so it includes items that have run out below their minimum.
+     - `sort`/`order` over a whitelist, with blanks last and name as the tie-break.
+     - `stock_counts`: counts at each stock level for the current search and category.
+   - The item list pages, sorts and filters on the server. Its cards show `stock_counts` and filter the list when clicked; the dashboard's low-stock link still opens it filtered.
+   - The item page's transaction history pages through `GET /inventory/transactions?item_id=`, newest first. The unused per-item transactions call is removed from the frontend service.
+   - These lists stay unpaged:
+     - An item's batches: few per item, and usage needs them all to show which are drawn first.
+     - The supplier list: a short lookup list that also feeds the supplier pickers.
+     - The dashboard's item picker.
 
 **Tests:**
 - Integration: application → stock decremented → cost stored → PHI set → harvest blocked → owner override allowed.
 - Rollback: a failed stock deduction leaves no application row.
 - Unit conversion.
-- Done: `crop-inputs.test.js` (9), `animal-withdrawals.test.js` (14) and `inventory-reports.test.js` (7). Backend total 184 tests.
-- Frontend: `utils/withdrawals.test.js`, `composables/useWithdrawalGuard.test.js` and `utils/inventoryReports.test.js`, with the product picker and purchase helpers in `utils/inventory.test.js`. Frontend total 63 tests.
+- Done: `crop-inputs.test.js` (9), `animal-withdrawals.test.js` (14) and `inventory-reports.test.js` (9, including the item list's stock level filter, counts and sorting). Backend total 186 tests.
+- Frontend: `utils/withdrawals.test.js`, `composables/useWithdrawalGuard.test.js`, `composables/useLazyTable.test.js` and `utils/inventoryReports.test.js`, with the product picker and purchase helpers in `utils/inventory.test.js`. Frontend total 70 tests.
 
 **Deliverables:** every spray, feed and dose deducts stock and carries a cost; harvesting or selling produce under withdrawal is prevented.
 

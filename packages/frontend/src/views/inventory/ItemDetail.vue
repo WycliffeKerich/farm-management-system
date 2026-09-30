@@ -5,6 +5,7 @@ import { useToast } from 'primevue/usetoast';
 import inventoryService from '@/services/inventory.service';
 import PurchaseDialog from '@/components/inventory/PurchaseDialog.vue';
 import ItemSupplyFields from '@/components/inventory/ItemSupplyFields.vue';
+import { useLazyTable } from '@/composables/useLazyTable';
 import { useSupplierOptions } from '@/composables/useSupplierOptions';
 import { useAuthStore } from '@/stores/auth.store';
 import { daysUntil, fromApiDate, toApiDate } from '@/utils/dates';
@@ -34,14 +35,28 @@ const authStore = useAuthStore();
 const canManage = computed(() => authStore.hasRole(['owner', 'manager']));
 const { suppliers, load: loadSuppliers } = useSupplierOptions();
 
+/** The item's ledger, newest first, a page at a time */
+const {
+    data: transactions,
+    totalRecords: transactionTotal,
+    loading: loadingTransactions,
+    first: transactionFirst,
+    rows: transactionRows,
+    filters: transactionFilters,
+    load: loadTransactions,
+    onPage: onTransactionPage
+} = useLazyTable(inventoryService.getTransactions, {
+    rows: 10,
+    filters: { item_id: route.params.id, transaction_type: null },
+    onError: (error) => console.error('Failed to load transactions:', error)
+});
+
 // State
 const loading = ref(true);
-const loadingTransactions = ref(false);
 const loadingUsage = ref(false);
 const loadingBatches = ref(false);
 const saving = ref(false);
 const item = ref(null);
-const transactions = ref([]);
 const usageReport = ref(null);
 const categories = ref([]);
 const batches = ref([]);
@@ -66,7 +81,6 @@ const transactionForm = ref(emptyTransactionForm());
 const editForm = ref({});
 
 // Filters
-const transactionFilters = ref({ type: null });
 const usageFilters = ref({
     date_from: new Date(new Date().setMonth(new Date().getMonth() - 1)),
     date_to: new Date()
@@ -96,27 +110,13 @@ const loadItem = async () => {
     try {
         const response = await inventoryService.getItemById(route.params.id);
         item.value = response.data.data;
+        // Back to the newest entries, where a movement just recorded appears
+        transactionFirst.value = 0;
         loadTransactions();
     } catch (error) {
         toast.add({ severity: 'error', summary: 'Error', detail: validationMessage(error, 'Failed to load item'), life: 3000 });
     } finally {
         loading.value = false;
-    }
-};
-
-const loadTransactions = async () => {
-    loadingTransactions.value = true;
-    try {
-        const params = {};
-        if (transactionFilters.value.type) {
-            params.transaction_type = transactionFilters.value.type;
-        }
-        const response = await inventoryService.getItemTransactions(route.params.id, params);
-        transactions.value = response.data.data || [];
-    } catch (error) {
-        console.error('Failed to load transactions:', error);
-    } finally {
-        loadingTransactions.value = false;
     }
 };
 
@@ -449,31 +449,40 @@ onMounted(() => {
                     <div class="flex items-center justify-between mb-4">
                         <h5 class="text-lg font-semibold m-0">Transaction History</h5>
                         <div class="flex gap-2">
-                            <Select v-model="transactionFilters.type" :options="TRANSACTION_TYPE_OPTIONS" optionLabel="label" optionValue="value" placeholder="All Types" class="w-40" showClear @change="loadTransactions" />
+                            <Select v-model="transactionFilters.transaction_type" :options="TRANSACTION_TYPE_OPTIONS" optionLabel="label" optionValue="value" placeholder="All Types" class="w-40" showClear />
                         </div>
                     </div>
 
-                    <div v-if="loadingTransactions" class="text-center py-8">
-                        <i class="pi pi-spin pi-spinner text-2xl text-primary"></i>
-                    </div>
-
-                    <div v-else-if="!transactions.length" class="text-center py-8">
-                        <i class="pi pi-inbox text-4xl text-surface-400 mb-4"></i>
-                        <p class="text-surface-500">No transactions recorded yet</p>
-                    </div>
-
-                    <DataTable v-else :value="transactions" responsiveLayout="scroll" class="p-datatable-sm">
-                        <Column field="transaction_date" header="Date" sortable>
+                    <DataTable
+                        :value="transactions"
+                        :loading="loadingTransactions"
+                        lazy
+                        :paginator="transactionTotal > 10"
+                        :first="transactionFirst"
+                        :rows="transactionRows"
+                        :totalRecords="transactionTotal"
+                        :rowsPerPageOptions="[10, 25, 50]"
+                        responsiveLayout="scroll"
+                        class="p-datatable-sm"
+                        @page="onTransactionPage"
+                    >
+                        <template #empty>
+                            <div class="text-center py-8">
+                                <i class="pi pi-inbox text-4xl text-surface-400 mb-4"></i>
+                                <p class="text-surface-500">{{ transactionFilters.transaction_type ? 'No transactions of this type' : 'No transactions recorded yet' }}</p>
+                            </div>
+                        </template>
+                        <Column field="transaction_date" header="Date">
                             <template #body="{ data }">
                                 {{ formatDate(data.transaction_date) }}
                             </template>
                         </Column>
-                        <Column field="transaction_type" header="Type" sortable>
+                        <Column field="transaction_type" header="Type">
                             <template #body="{ data }">
                                 <Tag :value="formatTransactionType(data.transaction_type)" :severity="transactionSeverity(data)" />
                             </template>
                         </Column>
-                        <Column field="quantity" header="Quantity" sortable>
+                        <Column field="quantity" header="Quantity">
                             <template #body="{ data }">
                                 <span :class="signedQuantity(data) >= 0 ? 'text-green-500' : 'text-red-500'">
                                     {{ formatSignedQuantity(data, item.unit) }}

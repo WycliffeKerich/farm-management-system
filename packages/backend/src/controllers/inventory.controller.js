@@ -112,14 +112,16 @@ class InventoryController {
    */
   async getItems(req, res, next) {
     try {
-      const { page, limit, category_id, search, low_stock, expiring_days } = req.query;
-      const filters = { category_id, search, low_stock: low_stock === 'true', expiring_days };
+      const { page, limit, category_id, search, low_stock, stock_status, expiring_days, sort, order } =
+        req.query;
+      const filters = { category_id, search, low_stock: low_stock === 'true', stock_status, expiring_days };
 
       if (page || limit) {
         const result = await inventoryService.paginateItems(
           parseInt(page, 10) || 1,
           parseInt(limit, 10) || 20,
-          filters
+          filters,
+          { field: sort, order }
         );
         res.json({ success: true, ...result });
       } else {

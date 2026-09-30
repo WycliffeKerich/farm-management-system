@@ -260,4 +260,48 @@ describe('item list filters', () => {
     expect(names(await get('/items?expiring_days=30&search=item'))).toEqual(['Item expiring']);
     expect(names(await get('/items'))).toContain(emptyExpiring.name);
   });
+
+  it('filters by stock level and counts every level for the summary', async () => {
+    const low = await createItem({ name: 'Low', minimum_stock: 10 });
+    await createItem({ name: 'Out below minimum', minimum_stock: 5 });
+    await createItem({ name: 'Out, no minimum', minimum_stock: null });
+    const plenty = await createItem({ name: 'Plenty', minimum_stock: 1 });
+    const unwatched = await createItem({ name: 'Unwatched', minimum_stock: null });
+    await receive(low.id, 2);
+    await receive(plenty.id, 50);
+    await receive(unwatched.id, 3);
+
+    const names = (res) => res.body.data.map((item) => item.name);
+
+    expect(names(await get('/items?stock_status=low'))).toEqual(['Low', 'Out below minimum']);
+    expect(names(await get('/items?page=1&stock_status=out'))).toEqual(['Out below minimum', 'Out, no minimum']);
+    expect(names(await get('/items?page=1&stock_status=ok'))).toEqual(['Plenty', 'Unwatched']);
+
+    const res = await get('/items?page=1&limit=2&stock_status=ok');
+    expect(res.body.pagination.total).toBe(2);
+    expect(res.body.stock_counts).toEqual({ total: 5, ok: 2, low: 2, out: 2 });
+    expect((await get('/items?page=1&search=out')).body.stock_counts).toEqual({ total: 2, ok: 0, low: 1, out: 2 });
+
+    expect((await get('/items?stock_status=empty')).status).toBe(400);
+  });
+
+  it('sorts the paged list by a whitelisted column, blanks last', async () => {
+    const feed = await createCategory({ name: 'Feed' });
+    const vet = await createCategory({ name: 'Veterinary' });
+    await createItem({ name: 'Bravo', category_id: vet.id, cost_per_unit: 50 });
+    await createItem({ name: 'Alpha', category_id: vet.id });
+    await createItem({ name: 'Charlie', category_id: feed.id, cost_per_unit: 10 });
+
+    const names = async (query) => (await get(`/items?page=1&${query}`)).body.data.map((item) => item.name);
+
+    expect(await names('')).toEqual(['Alpha', 'Bravo', 'Charlie']);
+    expect(await names('sort=name&order=desc')).toEqual(['Charlie', 'Bravo', 'Alpha']);
+    expect(await names('sort=category_name')).toEqual(['Charlie', 'Alpha', 'Bravo']);
+    expect(await names('sort=cost_per_unit&order=asc')).toEqual(['Charlie', 'Bravo', 'Alpha']);
+    expect(await names('sort=cost_per_unit&order=desc')).toEqual(['Bravo', 'Charlie', 'Alpha']);
+
+    expect((await get('/items?page=1&sort=supplier')).status).toBe(400);
+    expect((await get('/items?page=1&sort=constructor')).status).toBe(400);
+    expect((await get('/items?page=1&sort=name&order=sideways')).status).toBe(400);
+  });
 });

@@ -74,10 +74,6 @@ const inventoryService = {
         return api.get('/inventory/transactions', { params });
     },
 
-    getItemTransactions(itemId, params = {}) {
-        return api.get(`/inventory/items/${itemId}/transactions`, { params });
-    },
-
     createTransaction(data) {
         return api.post('/inventory/transactions', data);
     },
