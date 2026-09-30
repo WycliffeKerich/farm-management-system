@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { applyItemToDose, emptyDose, formatSignedQuantity, formatStock, isReducingMovement, signedQuantity, summariseUsage, toDosesPayload, toTransactionPayload, transactionSeverity, withdrawalSummary } from '@/utils/inventory';
+import {
+    applyItemToDose,
+    emptyDose,
+    emptyPurchase,
+    formatSignedQuantity,
+    itemSupplyFields,
+    formatStock,
+    isReducingMovement,
+    signedQuantity,
+    summariseUsage,
+    toDosesPayload,
+    toPurchasePayload,
+    toTransactionPayload,
+    transactionSeverity,
+    withdrawalSummary
+} from '@/utils/inventory';
 
 describe('inventory movements', () => {
     it('knows which form movements take stock away', () => {
@@ -81,5 +96,47 @@ describe('product pickers', () => {
         expect(payload).toHaveLength(2);
         expect(payload[0]).toMatchObject({ inventory_item_id: 7, quantity: 5, administered_date: '2026-09-01' });
         expect(payload[1]).toMatchObject({ inventory_item_id: null, product_name: 'Oxytet', unit: null });
+    });
+});
+
+describe('purchases', () => {
+    const item = { id: 4, default_supplier_id: 2, cost_per_unit: 350, location: 'Chemical store' };
+
+    it('starts a purchase from what the item was last bought as', () => {
+        expect(emptyPurchase(item)).toMatchObject({ quantity: null, supplier_id: 2, unit_cost: 350, storage_location: 'Chemical store', expiry_date: null });
+        expect(emptyPurchase(item).received_date).toBeInstanceOf(Date);
+        expect(emptyPurchase({ id: 5 })).toMatchObject({ supplier_id: null, unit_cost: null, storage_location: '' });
+    });
+
+    it('sends dates as calendar days and leaves blank text out so the server numbers the batch', () => {
+        const purchase = { ...emptyPurchase(item), quantity: 10, received_date: new Date(2026, 8, 30), expiry_date: new Date(2027, 2, 1), batch_number: '  ', notes: ' Invoice 118 ' };
+
+        expect(toPurchasePayload(4, purchase)).toEqual({
+            inventory_item_id: 4,
+            quantity: 10,
+            supplier_id: 2,
+            unit_cost: 350,
+            received_date: '2026-09-30',
+            manufacture_date: null,
+            expiry_date: '2027-03-01',
+            batch_number: undefined,
+            supplier_batch_number: undefined,
+            storage_location: 'Chemical store',
+            notes: 'Invoice 118'
+        });
+        expect(toPurchasePayload(5, { ...emptyPurchase({ id: 5 }), quantity: 1 })).toMatchObject({ supplier_id: undefined, unit_cost: undefined });
+    });
+
+    it("picks an item's supply fields for its edit form", () => {
+        expect(itemSupplyFields({ ...item, reorder_quantity: 20, meat_withdrawal_days: 28, name: 'Ignored' })).toEqual({
+            default_supplier_id: 2,
+            reorder_quantity: 20,
+            active_ingredient: null,
+            pre_harvest_interval_days: null,
+            milk_withdrawal_days: null,
+            meat_withdrawal_days: 28,
+            egg_withdrawal_days: null
+        });
+        expect(Object.values(itemSupplyFields())).toEqual(Array(7).fill(null));
     });
 });

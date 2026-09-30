@@ -449,7 +449,15 @@ Follow-ups (carried into Phase 4):
    - `composables/useWithdrawalGuard.js` with `components/withdrawals/WithdrawalDialog.vue` handles a 409 `WITHDRAWAL_ACTIVE` on every harvest, production record and sale form. The dialog lists the holds; the owner can give a reason and save anyway, and other roles are told when it can be recorded.
    - The quick "Record Sale" dialogs on the animal and group lists now create a sale record (`POST /animals/sales`), and are shown to the owner and managers only. Before this, an animal's price and buyer were dropped. A group's sale was stored as a plain removal because the form sent `adjustment_type` rather than `type`.
    - The `v-tooltip` directive is now registered, so the tooltips used across the list pages appear.
-3. Supplier management; purchase form with batch and expiry; valuation and reorder views.
+3. ~~Supplier management; purchase form with batch and expiry; valuation and reorder views.~~ Done.
+   - `views/inventory/SupplierList.vue` (`/inventory/suppliers`): anyone can look suppliers up; owners and managers add, edit, deactivate and delete them. A supplier that items or batches use can only be deactivated.
+   - `components/inventory/PurchaseDialog.vue` receives stock as a batch (`POST /inventory/batches`): supplier, unit cost, received, manufacture and expiry dates, batch and supplier lot numbers. The supplier and cost default to the item's usual supplier and cost per unit. It replaces the old batch dialog. For owners and managers, "Add Stock" on the item list, item page and dashboard opens it; workers keep the plain purchase transaction.
+   - `components/inventory/ItemSupplyFields.vue` adds to both item forms the usual supplier (`default_supplier_id`, replacing the free-text supplier), the reorder quantity, the active ingredient, and the pre-harvest interval and milk, meat and egg withdrawal days. Before this, the safety intervals could only be set through the API.
+   - `views/inventory/InventoryReports.vue` (`/inventory/reports`, owner and manager) has three tabs:
+     - Valuation: by category and item, with CSV export.
+     - Reorder: one order per supplier, a copy-order text to send them, and receiving straight from the list.
+     - Expiring: expired and expiring stock, with the value at risk.
+   - The dashboard links to the reorder and expiring tabs.
 4. Adopt `useLazyTable` for the inventory lists (server-side pagination).
 
 **Tests:**
@@ -457,7 +465,7 @@ Follow-ups (carried into Phase 4):
 - Rollback: a failed stock deduction leaves no application row.
 - Unit conversion.
 - Done: `crop-inputs.test.js` (9), `animal-withdrawals.test.js` (14) and `inventory-reports.test.js` (7). Backend total 184 tests.
-- Frontend: `utils/withdrawals.test.js` and `composables/useWithdrawalGuard.test.js`, with the product picker helpers in `utils/inventory.test.js`. Frontend total 57 tests.
+- Frontend: `utils/withdrawals.test.js`, `composables/useWithdrawalGuard.test.js` and `utils/inventoryReports.test.js`, with the product picker and purchase helpers in `utils/inventory.test.js`. Frontend total 63 tests.
 
 **Deliverables:** every spray, feed and dose deducts stock and carries a cost; harvesting or selling produce under withdrawal is prevented.
 

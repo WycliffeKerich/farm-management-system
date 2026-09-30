@@ -4,10 +4,13 @@ import { useRouter, useRoute } from 'vue-router';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
 import inventoryService from '@/services/inventory.service';
+import PurchaseDialog from '@/components/inventory/PurchaseDialog.vue';
+import ItemSupplyFields from '@/components/inventory/ItemSupplyFields.vue';
+import { useSupplierOptions } from '@/composables/useSupplierOptions';
 import { useAuthStore } from '@/stores/auth.store';
 import { daysUntil, fromApiDate, toApiDate } from '@/utils/dates';
 import { validationMessage } from '@/utils/forms';
-import { MOVEMENT_OPTIONS, formatCurrency, isReducingMovement, toTransactionPayload } from '@/utils/inventory';
+import { MOVEMENT_OPTIONS, formatCurrency, isReducingMovement, itemSupplyFields, toTransactionPayload } from '@/utils/inventory';
 
 const router = useRouter();
 const route = useRoute();
@@ -16,6 +19,7 @@ const toast = useToast();
 const authStore = useAuthStore();
 
 const canManage = computed(() => authStore.hasRole(['owner', 'manager']));
+const { suppliers, load: loadSuppliers } = useSupplierOptions();
 
 // State
 const loading = ref(false);
@@ -28,6 +32,7 @@ const itemDialog = ref(false);
 const transactionDialog = ref(false);
 const editingItem = ref(null);
 const selectedItem = ref(null);
+const purchaseDialog = ref(false);
 
 // Filters
 const filters = ref({
@@ -45,10 +50,10 @@ const emptyItemForm = () => ({
     minimum_stock: 0,
     cost_per_unit: null,
     expiry_date: null,
-    supplier: '',
     location: '',
     description: '',
-    is_active: true
+    is_active: true,
+    ...itemSupplyFields()
 });
 const itemForm = ref(emptyItemForm());
 
@@ -141,10 +146,10 @@ const editItem = (item) => {
         minimum_stock: item.minimum_stock,
         cost_per_unit: item.cost_per_unit,
         expiry_date: fromApiDate(item.expiry_date),
-        supplier: item.supplier,
         location: item.location,
         description: item.description,
-        is_active: item.is_active
+        is_active: item.is_active,
+        ...itemSupplyFields(item)
     };
     submitted.value = false;
     itemDialog.value = true;
@@ -163,6 +168,8 @@ const saveItem = async () => {
     try {
         const { current_stock, ...fields } = itemForm.value;
         const data = { ...fields, minimum_stock: fields.minimum_stock ?? 0, expiry_date: toApiDate(fields.expiry_date) };
+        // The server names the supplier from its id; clearing the id clears the name
+        if (!data.default_supplier_id && editingItem.value?.default_supplier_id) data.supplier = null;
 
         if (editingItem.value) {
             await inventoryService.updateItem(editingItem.value.id, data);
@@ -183,6 +190,16 @@ const saveItem = async () => {
 
 const viewItem = (item) => {
     router.push({ name: 'inventory-item-detail', params: { id: item.id } });
+};
+
+/** Owners and managers receive stock as a batch with its supplier and expiry; others record a plain purchase */
+const openAddStock = (item) => {
+    if (!canManage.value) {
+        openTransactionDialog(item, 'purchase');
+        return;
+    }
+    selectedItem.value = item;
+    purchaseDialog.value = true;
 };
 
 const openTransactionDialog = (item, movement) => {
@@ -263,6 +280,7 @@ onMounted(() => {
     }
     loadItems();
     loadCategories();
+    if (canManage.value) loadSuppliers();
 });
 </script>
 
@@ -387,7 +405,7 @@ onMounted(() => {
                 <template #body="{ data }">
                     <div class="flex gap-1">
                         <Button icon="pi pi-eye" severity="info" text rounded size="small" @click="viewItem(data)" v-tooltip.top="'View'" />
-                        <Button icon="pi pi-plus" severity="success" text rounded size="small" @click="openTransactionDialog(data, 'purchase')" v-tooltip.top="'Add Stock'" />
+                        <Button icon="pi pi-plus" severity="success" text rounded size="small" @click="openAddStock(data)" v-tooltip.top="'Add Stock'" />
                         <Button icon="pi pi-minus" severity="warn" text rounded size="small" @click="openTransactionDialog(data, 'usage')" v-tooltip.top="'Use Stock'" :disabled="data.current_stock <= 0" />
                         <template v-if="canManage">
                             <Button icon="pi pi-pencil" severity="secondary" text rounded size="small" @click="editItem(data)" v-tooltip.top="'Edit'" />
@@ -454,11 +472,6 @@ onMounted(() => {
                 </div>
 
                 <div class="flex flex-col gap-2">
-                    <label for="supplier" class="font-medium">Supplier</label>
-                    <InputText id="supplier" v-model="itemForm.supplier" class="w-full" />
-                </div>
-
-                <div class="flex flex-col gap-2">
                     <label for="location" class="font-medium">Storage Location</label>
                     <InputText id="location" v-model="itemForm.location" class="w-full" />
                 </div>
@@ -467,6 +480,8 @@ onMounted(() => {
                     <label for="description" class="font-medium">Description</label>
                     <Textarea id="description" v-model="itemForm.description" rows="2" class="w-full" />
                 </div>
+
+                <ItemSupplyFields v-model="itemForm" :suppliers="suppliers" :unit="itemForm.unit" idPrefix="item" />
 
                 <div class="flex items-center gap-2">
                     <Checkbox id="is_active" v-model="itemForm.is_active" :binary="true" />
@@ -521,6 +536,8 @@ onMounted(() => {
                 <Button label="Record" @click="saveTransaction" :loading="saving" />
             </template>
         </Dialog>
+
+        <PurchaseDialog v-model:visible="purchaseDialog" :item="selectedItem" @saved="loadItems" />
 
         <!-- Delete Confirmation -->
         <ConfirmDialog />

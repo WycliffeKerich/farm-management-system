@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
 import inventoryService from '@/services/inventory.service';
+import PurchaseDialog from '@/components/inventory/PurchaseDialog.vue';
 import { useAuthStore } from '@/stores/auth.store';
 import { fromApiDate, toApiDate } from '@/utils/dates';
 import { validationMessage } from '@/utils/forms';
@@ -28,6 +29,8 @@ const allItems = ref([]);
 // Dialogs
 const categoryDialog = ref(false);
 const transactionDialog = ref(false);
+const purchaseDialog = ref(false);
+const purchaseItem = ref(null);
 const editingCategory = ref(null);
 
 // Forms
@@ -137,6 +140,17 @@ const confirmDeleteCategory = (category) => {
 };
 
 // Transaction methods
+
+/** Owners and managers receive stock as a batch with its supplier and expiry; others record a plain purchase */
+const openAddStock = (item) => {
+    if (!canManage.value) {
+        openTransactionDialog(item.id, 'purchase');
+        return;
+    }
+    purchaseItem.value = item;
+    purchaseDialog.value = true;
+};
+
 const openTransactionDialog = (itemId = null, movement = null) => {
     transactionForm.value = emptyTransactionForm(itemId, movement);
     transactionSubmitted.value = false;
@@ -243,7 +257,10 @@ onMounted(() => {
                         <i class="pi pi-clock text-orange-500 text-xl!"></i>
                     </div>
                 </div>
-                <span class="text-muted-color">Items and batches within 30 days</span>
+                <router-link v-if="canManage && expiringCount > 0" :to="{ name: 'inventory-reports', query: { tab: 'expiring' } }" class="text-primary hover:underline text-sm">
+                    View expiring stock <i class="pi pi-arrow-right text-xs"></i>
+                </router-link>
+                <span v-else class="text-muted-color">Items and batches within 30 days</span>
             </div>
         </div>
 
@@ -311,9 +328,14 @@ onMounted(() => {
             <div class="card">
                 <div class="flex items-center justify-between mb-4">
                     <h5 class="text-lg font-semibold m-0">Low Stock Items</h5>
-                    <router-link to="/inventory/items?low_stock=true">
-                        <Button label="View All" icon="pi pi-arrow-right" size="small" text />
-                    </router-link>
+                    <div class="flex gap-1">
+                        <router-link v-if="canManage" :to="{ name: 'inventory-reports', query: { tab: 'reorder' } }">
+                            <Button label="Reorder List" icon="pi pi-shopping-cart" size="small" text />
+                        </router-link>
+                        <router-link to="/inventory/items?low_stock=true">
+                            <Button label="View All" icon="pi pi-arrow-right" size="small" text />
+                        </router-link>
+                    </div>
                 </div>
 
                 <div v-if="loading" class="text-center py-8">
@@ -343,7 +365,7 @@ onMounted(() => {
                     </Column>
                     <Column header="Action" style="width: 80px">
                         <template #body="{ data }">
-                            <Button icon="pi pi-plus" severity="success" text rounded size="small" @click="openTransactionDialog(data.id, 'purchase')" v-tooltip.top="'Add Stock'" />
+                            <Button icon="pi pi-plus" severity="success" text rounded size="small" @click="openAddStock(data)" v-tooltip.top="'Add Stock'" />
                         </template>
                     </Column>
                 </DataTable>
@@ -514,5 +536,6 @@ onMounted(() => {
 
         <!-- Confirm Dialog -->
         <ConfirmDialog />
+        <PurchaseDialog v-model:visible="purchaseDialog" :item="purchaseItem" @saved="loadData" />
     </div>
 </template>

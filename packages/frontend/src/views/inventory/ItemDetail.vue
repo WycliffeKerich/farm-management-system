@@ -3,6 +3,9 @@ import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import inventoryService from '@/services/inventory.service';
+import PurchaseDialog from '@/components/inventory/PurchaseDialog.vue';
+import ItemSupplyFields from '@/components/inventory/ItemSupplyFields.vue';
+import { useSupplierOptions } from '@/composables/useSupplierOptions';
 import { useAuthStore } from '@/stores/auth.store';
 import { daysUntil, fromApiDate, toApiDate } from '@/utils/dates';
 import { validationMessage } from '@/utils/forms';
@@ -15,10 +18,12 @@ import {
     formatSignedQuantity,
     formatTransactionType,
     isReducingMovement,
+    itemSupplyFields,
     signedQuantity,
     summariseUsage,
     toTransactionPayload,
-    transactionSeverity
+    transactionSeverity,
+    withdrawalSummary
 } from '@/utils/inventory';
 
 const route = useRoute();
@@ -27,6 +32,7 @@ const toast = useToast();
 const authStore = useAuthStore();
 
 const canManage = computed(() => authStore.hasRole(['owner', 'manager']));
+const { suppliers, load: loadSuppliers } = useSupplierOptions();
 
 // State
 const loading = ref(true);
@@ -43,10 +49,9 @@ const batches = ref([]);
 // Dialogs
 const transactionDialog = ref(false);
 const editDialog = ref(false);
-const batchDialog = ref(false);
+const purchaseDialog = ref(false);
 const transactionSubmitted = ref(false);
 const editSubmitted = ref(false);
-const batchSubmitted = ref(false);
 
 // Forms
 const emptyTransactionForm = (movement = null) => ({
@@ -82,6 +87,8 @@ const usableBatches = computed(() => batches.value.filter((batch) => batch.statu
 const usesBatches = computed(() => transactionForm.value.movement === 'usage' && usableBatches.value.length > 0);
 
 const usage = computed(() => summariseUsage(usageReport.value));
+
+const safetyIntervals = computed(() => [withdrawalSummary(item.value, 'crop'), withdrawalSummary(item.value, 'animal')].filter(Boolean).join(' · '));
 
 // Methods
 const loadItem = async () => {
@@ -136,6 +143,17 @@ const loadCategories = async () => {
     }
 };
 
+/** Owners and managers receive stock as a batch with its supplier and expiry; others record a plain purchase */
+const openAddStock = () => {
+    if (canManage.value) purchaseDialog.value = true;
+    else openTransactionDialog('purchase');
+};
+
+const onPurchased = () => {
+    loadBatches();
+    loadItem();
+};
+
 const openTransactionDialog = (movement) => {
     transactionForm.value = emptyTransactionForm(movement);
     transactionSubmitted.value = false;
@@ -180,8 +198,9 @@ const saveTransaction = async () => {
 };
 
 const editItem = () => {
-    const { name, item_code, category_id, unit, minimum_stock, cost_per_unit, supplier, location, expiry_date, description, notes, is_active } = item.value;
-    editForm.value = { name, item_code, category_id, unit, minimum_stock, cost_per_unit, supplier, location, description, notes, is_active, expiry_date: fromApiDate(expiry_date) };
+    const { name, item_code, category_id, unit, minimum_stock, cost_per_unit, location, expiry_date, description, notes, is_active } = item.value;
+    editForm.value = { name, item_code, category_id, unit, minimum_stock, cost_per_unit, location, description, notes, is_active, expiry_date: fromApiDate(expiry_date), ...itemSupplyFields(item.value) };
+    loadSuppliers();
     editSubmitted.value = false;
     editDialog.value = true;
 };
@@ -194,6 +213,8 @@ const saveItem = async () => {
     try {
         // eslint-disable-next-line no-unused-vars -- item codes are assigned by the server
         const { item_code, ...data } = editForm.value;
+        // The server names the supplier from its id; clearing the id clears the name
+        if (!data.default_supplier_id && item.value.default_supplier_id) data.supplier = null;
         await inventoryService.updateItem(item.value.id, { ...data, expiry_date: toApiDate(data.expiry_date) });
         toast.add({ severity: 'success', summary: 'Success', detail: 'Item updated', life: 3000 });
         editDialog.value = false;
@@ -248,59 +269,6 @@ const loadBatches = async () => {
         console.error('Failed to load batches:', error);
     } finally {
         loadingBatches.value = false;
-    }
-};
-
-const emptyBatchForm = () => ({
-    quantity: null,
-    batch_number: '',
-    unit_cost: item.value?.cost_per_unit ?? null,
-    manufacture_date: null,
-    expiry_date: null,
-    received_date: new Date(),
-    supplier: item.value?.supplier || '',
-    supplier_batch_number: '',
-    storage_location: item.value?.location || '',
-    notes: ''
-});
-const batchForm = ref(emptyBatchForm());
-
-const openBatchDialog = () => {
-    batchForm.value = emptyBatchForm();
-    batchSubmitted.value = false;
-    batchDialog.value = true;
-};
-
-const saveBatch = async () => {
-    batchSubmitted.value = true;
-    if (!batchForm.value.quantity || batchForm.value.quantity <= 0) {
-        toast.add({ severity: 'error', summary: 'Error', detail: 'Quantity is required', life: 3000 });
-        return;
-    }
-
-    saving.value = true;
-    try {
-        await inventoryService.createBatch({
-            inventory_item_id: Number(route.params.id),
-            quantity: batchForm.value.quantity,
-            batch_number: batchForm.value.batch_number || undefined,
-            unit_cost: batchForm.value.unit_cost,
-            manufacture_date: toApiDate(batchForm.value.manufacture_date),
-            expiry_date: toApiDate(batchForm.value.expiry_date),
-            received_date: toApiDate(batchForm.value.received_date),
-            supplier: batchForm.value.supplier || undefined,
-            supplier_batch_number: batchForm.value.supplier_batch_number || undefined,
-            storage_location: batchForm.value.storage_location || undefined,
-            notes: batchForm.value.notes || undefined
-        });
-        toast.add({ severity: 'success', summary: 'Success', detail: 'Batch received', life: 3000 });
-        batchDialog.value = false;
-        loadBatches();
-        loadItem();
-    } catch (error) {
-        toast.add({ severity: 'error', summary: 'Error', detail: validationMessage(error, 'Failed to create batch'), life: 4000 });
-    } finally {
-        saving.value = false;
     }
 };
 
@@ -394,6 +362,16 @@ onMounted(() => {
                             <span class="font-medium">{{ item.supplier || '-' }}</span>
                         </div>
 
+                        <div v-if="item.reorder_quantity" class="flex justify-between">
+                            <span class="text-surface-500">Reorder Quantity</span>
+                            <span class="font-medium">{{ item.reorder_quantity }} {{ item.unit }}</span>
+                        </div>
+
+                        <div v-if="safetyIntervals" class="flex justify-between gap-4">
+                            <span class="text-surface-500">Safety Intervals</span>
+                            <span class="font-medium text-right">{{ safetyIntervals }}</span>
+                        </div>
+
                         <div class="flex justify-between">
                             <span class="text-surface-500">Storage Location</span>
                             <span class="font-medium">{{ item.location || '-' }}</span>
@@ -420,7 +398,7 @@ onMounted(() => {
                     <div class="flex items-center justify-between mb-4">
                         <h5 class="text-lg font-semibold m-0">Stock Information</h5>
                         <div class="flex gap-2">
-                            <Button label="Add Stock" icon="pi pi-plus" size="small" severity="success" @click="openTransactionDialog('purchase')" />
+                            <Button label="Add Stock" icon="pi pi-plus" size="small" severity="success" @click="openAddStock" />
                             <Button label="Use Stock" icon="pi pi-minus" size="small" severity="warn" @click="openTransactionDialog('usage')" :disabled="item.current_stock <= 0" />
                         </div>
                     </div>
@@ -586,7 +564,7 @@ onMounted(() => {
                 <div class="card">
                     <div class="flex items-center justify-between mb-4">
                         <h5 class="text-lg font-semibold m-0">Stock Batches</h5>
-                        <Button v-if="canManage" label="Receive Batch" icon="pi pi-plus" size="small" @click="openBatchDialog" />
+                        <Button v-if="canManage" label="Receive Stock" icon="pi pi-plus" size="small" @click="purchaseDialog = true" />
                     </div>
 
                     <div v-if="loadingBatches" class="text-center py-8">
@@ -759,8 +737,8 @@ onMounted(() => {
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="flex flex-col gap-2">
-                        <label for="edit_supplier" class="font-medium">Supplier</label>
-                        <InputText id="edit_supplier" v-model="editForm.supplier" class="w-full" />
+                        <label for="edit_location" class="font-medium">Storage Location</label>
+                        <InputText id="edit_location" v-model="editForm.location" class="w-full" />
                     </div>
                     <div class="flex flex-col gap-2">
                         <label for="edit_expiry" class="font-medium">Expiry Date</label>
@@ -769,14 +747,11 @@ onMounted(() => {
                 </div>
 
                 <div class="flex flex-col gap-2">
-                    <label for="edit_location" class="font-medium">Storage Location</label>
-                    <InputText id="edit_location" v-model="editForm.location" class="w-full" />
-                </div>
-
-                <div class="flex flex-col gap-2">
                     <label for="edit_desc" class="font-medium">Description</label>
                     <Textarea id="edit_desc" v-model="editForm.description" rows="2" class="w-full" />
                 </div>
+
+                <ItemSupplyFields v-model="editForm" :suppliers="suppliers" :unit="editForm.unit" idPrefix="edit" />
 
                 <div class="flex items-center gap-2">
                     <Checkbox id="edit_active" v-model="editForm.is_active" :binary="true" />
@@ -790,82 +765,6 @@ onMounted(() => {
             </template>
         </Dialog>
 
-        <!-- Receive Batch Dialog -->
-        <Dialog v-model:visible="batchDialog" header="Receive Stock Batch" :modal="true" :style="{ width: '550px' }" :closable="!saving">
-            <div class="flex flex-col gap-4">
-                <div class="p-4 bg-surface-100 dark:bg-surface-800 rounded-lg">
-                    <p class="font-medium">{{ item?.name }}</p>
-                    <p class="text-surface-500 text-sm">The batch quantity is added to stock as a purchase</p>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="flex flex-col gap-2">
-                        <label for="batch_qty" class="font-medium">Quantity *</label>
-                        <InputNumber
-                            id="batch_qty"
-                            v-model="batchForm.quantity"
-                            :min="0.01"
-                            :minFractionDigits="0"
-                            :maxFractionDigits="2"
-                            :suffix="item?.unit ? ` ${item.unit}` : ''"
-                            class="w-full"
-                            :class="{ 'p-invalid': batchSubmitted && !batchForm.quantity }"
-                        />
-                    </div>
-                    <div class="flex flex-col gap-2">
-                        <label for="batch_number" class="font-medium">Batch Number</label>
-                        <InputText id="batch_number" v-model="batchForm.batch_number" class="w-full" placeholder="Auto-generated if empty" />
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="flex flex-col gap-2">
-                        <label for="batch_cost" class="font-medium">Unit Cost</label>
-                        <InputNumber id="batch_cost" v-model="batchForm.unit_cost" :min="0" :minFractionDigits="2" mode="currency" currency="KES" locale="en-KE" class="w-full" />
-                    </div>
-                    <div class="flex flex-col gap-2">
-                        <label for="batch_received" class="font-medium">Received Date</label>
-                        <DatePicker id="batch_received" v-model="batchForm.received_date" dateFormat="yy-mm-dd" class="w-full" />
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="flex flex-col gap-2">
-                        <label for="batch_mfg" class="font-medium">Manufacture Date</label>
-                        <DatePicker id="batch_mfg" v-model="batchForm.manufacture_date" dateFormat="yy-mm-dd" class="w-full" />
-                    </div>
-                    <div class="flex flex-col gap-2">
-                        <label for="batch_expiry" class="font-medium">Expiry Date</label>
-                        <DatePicker id="batch_expiry" v-model="batchForm.expiry_date" dateFormat="yy-mm-dd" class="w-full" />
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="flex flex-col gap-2">
-                        <label for="batch_supplier" class="font-medium">Supplier</label>
-                        <InputText id="batch_supplier" v-model="batchForm.supplier" class="w-full" />
-                    </div>
-                    <div class="flex flex-col gap-2">
-                        <label for="batch_supplier_num" class="font-medium">Supplier Batch #</label>
-                        <InputText id="batch_supplier_num" v-model="batchForm.supplier_batch_number" class="w-full" />
-                    </div>
-                </div>
-
-                <div class="flex flex-col gap-2">
-                    <label for="batch_location" class="font-medium">Storage Location</label>
-                    <InputText id="batch_location" v-model="batchForm.storage_location" class="w-full" />
-                </div>
-
-                <div class="flex flex-col gap-2">
-                    <label for="batch_notes" class="font-medium">Notes</label>
-                    <Textarea id="batch_notes" v-model="batchForm.notes" rows="2" class="w-full" />
-                </div>
-            </div>
-
-            <template #footer>
-                <Button label="Cancel" severity="secondary" @click="batchDialog = false" :disabled="saving" />
-                <Button label="Receive" @click="saveBatch" :loading="saving" />
-            </template>
-        </Dialog>
+        <PurchaseDialog v-model:visible="purchaseDialog" :item="item" @saved="onPurchased" />
     </div>
 </template>

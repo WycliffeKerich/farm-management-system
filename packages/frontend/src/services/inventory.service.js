@@ -95,6 +95,43 @@ const inventoryService = {
         });
     },
 
+    /** Stock value by category and item, at batch cost where known */
+    getValuationReport(params = {}) {
+        return api.get('/inventory/reports/valuation', { params });
+    },
+
+    /** Items at or below minimum stock, with a suggested order and supplier */
+    getReorderReport(usageDays = 30) {
+        return api.get('/inventory/reports/reorder', { params: { usage_days: usageDays } });
+    },
+
+    /** Batches expired or expiring within `days`, with the value at risk */
+    getExpiringReport(days = 30) {
+        return api.get('/inventory/reports/expiring', { params: { days } });
+    },
+
+    // ==================== SUPPLIERS ====================
+
+    getSuppliers(params = {}) {
+        return api.get('/suppliers', { params });
+    },
+
+    getSupplier(id) {
+        return api.get(`/suppliers/${id}`);
+    },
+
+    createSupplier(data) {
+        return api.post('/suppliers', data);
+    },
+
+    updateSupplier(id, data) {
+        return api.put(`/suppliers/${id}`, data);
+    },
+
+    deleteSupplier(id) {
+        return api.delete(`/suppliers/${id}`);
+    },
+
     // ==================== UNITS OF MEASURE ====================
 
     getUnitsOfMeasure(category = null) {
