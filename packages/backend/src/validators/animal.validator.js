@@ -1,4 +1,5 @@
 const { body, param, query } = require('express-validator');
+const { enterpriseIdField } = require('./enterprise.validator');
 
 // A product name or unit may be left out only when an inventory item supplies it
 const requiredWithoutItem = (value, { req }) => Boolean(value) || Boolean(req.body.inventory_item_id);
@@ -83,6 +84,7 @@ const animalValidators = {
       .withMessage('Tracking mode must be individual, flock, or both'),
     body('production_types').optional(),
     body('default_lifespan_days').optional().isInt({ min: 1 }).withMessage('Lifespan must be a positive integer'),
+    enterpriseIdField(),
   ],
 
   updateAnimalType: [
@@ -111,6 +113,7 @@ const animalValidators = {
       .isIn(['individual', 'flock', 'both'])
       .withMessage('Tracking mode must be individual, flock, or both'),
     body('default_lifespan_days').optional().isInt({ min: 1 }).withMessage('Lifespan must be a positive integer'),
+    enterpriseIdField(),
   ],
 
   // ==================== BREED VALIDATORS ====================
@@ -216,6 +219,7 @@ const animalValidators = {
       .isLength({ max: 20 })
       .withMessage('Weight unit must be at most 20 characters'),
     body('notes').optional().trim(),
+    enterpriseIdField(),
   ],
 
   updateAnimal: [
@@ -233,6 +237,7 @@ const animalValidators = {
       .trim()
       .isLength({ max: 20 })
       .withMessage('Weight unit must be at most 20 characters'),
+    enterpriseIdField(),
   ],
 
   updateAnimalStatus: [
@@ -298,6 +303,7 @@ const animalValidators = {
     body('cost_per_unit').optional().isFloat({ min: 0 }).withMessage('Cost per unit must be a positive number'),
     body('age_at_acquisition_days').optional().isInt({ min: 0 }).withMessage('Age must be a non-negative integer'),
     body('notes').optional().trim(),
+    enterpriseIdField(),
   ],
 
   updateGroup: [
@@ -312,6 +318,7 @@ const animalValidators = {
     body('group_code').optional().trim().isLength({ max: 50 }).withMessage('Group code must be at most 50 characters'),
     body('housing_id').optional().isInt().withMessage('Housing ID must be an integer'),
     body('group_type').optional().trim().isLength({ max: 50 }).withMessage('Group type must be at most 50 characters'),
+    enterpriseIdField(),
   ],
 
   recordGroupAddition: [

@@ -7,6 +7,7 @@ const inventoryRoutes = require('./inventory.routes');
 const supplierRoutes = require('./supplier.routes');
 const withdrawalRoutes = require('./withdrawal.routes');
 const activityRoutes = require('./activity.routes');
+const enterpriseRoutes = require('./enterprise.routes');
 const { db } = require('../config/database');
 
 const router = express.Router();
@@ -54,6 +55,9 @@ router.use('/withdrawals', withdrawalRoutes);
 
 // The farm timeline and offline sync
 router.use('/activities', activityRoutes);
+
+// Enterprises: the lines of business costed on their own
+router.use('/enterprises', enterpriseRoutes);
 
 // TODO: Add more route modules as they are implemented
 // router.use('/financial', financialRoutes);

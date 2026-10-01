@@ -84,6 +84,24 @@ class ActivityRepository extends BaseRepository {
   }
 
   /**
+   * The enterprise of an activity's subject, copied onto it
+   * @param {Object} subject - crop_batch_id, animal_id or animal_group_id
+   * @param {Object} [t] - Task/transaction
+   * @returns {Promise<number|null>}
+   */
+  async subjectEnterpriseId({ crop_batch_id: batchId, animal_id: animalId, animal_group_id: groupId }, t) {
+    const { enterprise_id: enterpriseId } = await this.conn(t).one(
+      `SELECT COALESCE(
+                (SELECT enterprise_id FROM crop_batches WHERE id = $1),
+                (SELECT enterprise_id FROM animals WHERE id = $2),
+                (SELECT enterprise_id FROM animal_groups WHERE id = $3)
+              ) AS enterprise_id`,
+      [batchId || null, animalId || null, groupId || null]
+    );
+    return enterpriseId;
+  }
+
+  /**
    * The employee record of a user, if they have one
    * @param {number} userId - User ID
    * @param {Object} [t] - Task/transaction

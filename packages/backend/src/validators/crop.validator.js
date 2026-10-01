@@ -1,4 +1,5 @@
 const { body, param, query } = require('express-validator');
+const { enterpriseIdField } = require('./enterprise.validator');
 
 // An input application names its product and unit, or takes them from an inventory item
 const requiredWithoutItem = (value, { req }) => Boolean(value) || Boolean(req.body.inventory_item_id);
@@ -42,6 +43,7 @@ const cropValidators = {
       .withMessage('Category must be at most 50 characters'),
     body('typical_growth_days').optional().isInt({ min: 1 }).withMessage('Growth days must be a positive integer'),
     body('description').optional().trim(),
+    enterpriseIdField(),
   ],
 
   updateCropType: [
@@ -61,6 +63,7 @@ const cropValidators = {
       .isLength({ max: 50 })
       .withMessage('Category must be at most 50 characters'),
     body('typical_growth_days').optional().isInt({ min: 1 }).withMessage('Growth days must be a positive integer'),
+    enterpriseIdField(),
   ],
 
   // Variety validators
@@ -158,6 +161,7 @@ const cropValidators = {
       .withMessage('Unit must be at most 20 characters'),
     body('status').optional().isIn(['planted', 'growing', 'harvesting', 'completed']).withMessage('Invalid status'),
     body('notes').optional().trim(),
+    enterpriseIdField(),
   ],
 
   updateBatch: [
@@ -168,6 +172,7 @@ const cropValidators = {
     body('expected_harvest_date').optional().isISO8601().withMessage('Invalid date format'),
     body('quantity_planted').optional().isInt({ min: 1 }).withMessage('Quantity must be a positive integer'),
     body('status').optional().isIn(['planted', 'growing', 'harvesting', 'completed']).withMessage('Invalid status'),
+    enterpriseIdField(),
   ],
 
   updateBatchStatus: [

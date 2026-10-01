@@ -106,14 +106,18 @@ async function fieldsFor(table, row, t) {
  */
 class ActivityService {
   /**
-   * Record an activity. A crop batch's location is copied onto it, and the
-   * person who did the work defaults to the recording user's employee record.
+   * Record an activity. Its subject's enterprise and a crop batch's location
+   * are copied onto it, and the person who did the work defaults to the
+   * recording user's employee record.
    * @param {Object} t - Transaction
    * @param {Object} fields - Activity columns (see activity.repository)
    * @returns {Promise<Object>} The activity
    */
   async record(t, fields) {
     const values = { status: 'done', ...fields };
+    if (values.enterprise_id === undefined) {
+      values.enterprise_id = await activityRepository.subjectEnterpriseId(values, t);
+    }
     if (values.crop_batch_id && values.location_id === undefined) {
       values.location_id = await activityRepository.batchLocationId(values.crop_batch_id, t);
     }

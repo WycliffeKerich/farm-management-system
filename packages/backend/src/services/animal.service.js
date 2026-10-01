@@ -12,6 +12,7 @@ const breedingRecordRepository = require('../repositories/breeding-record.reposi
 const animalSaleRepository = require('../repositories/animal-sale.repository');
 const incubationRecordRepository = require('../repositories/incubation-record.repository');
 const withdrawalService = require('./withdrawal.service');
+const enterpriseService = require('./enterprise.service');
 const { db } = require('../config/database');
 const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
 const { addDays, toDateString } = require('../utils/dates');
@@ -53,6 +54,7 @@ class AnimalService {
     if (existing) {
       throw new ConflictError('Animal type with this name already exists');
     }
+    await enterpriseService.assertAssignable(data.enterprise_id);
     return await animalTypeRepository.create(data);
   }
 
@@ -73,6 +75,9 @@ class AnimalService {
       if (existing) {
         throw new ConflictError('Animal type with this name already exists');
       }
+    }
+    if (data.enterprise_id !== animalType.enterprise_id) {
+      await enterpriseService.assertAssignable(data.enterprise_id);
     }
 
     return await animalTypeRepository.update(id, data);
@@ -367,6 +372,7 @@ class AnimalService {
 
     const animalData = {
       ...data,
+      enterprise_id: await enterpriseService.forNewSubject(data, breed.animal_type_enterprise_id),
       tag_number: tagNumber,
       status: data.status || 'active',
       created_by: userId,
@@ -408,7 +414,15 @@ class AnimalService {
       }
     }
 
-    return await animalRepository.update(id, data);
+    if (data.enterprise_id !== animal.enterprise_id) {
+      await enterpriseService.assertAssignable(data.enterprise_id);
+    }
+
+    return db.tx(async (t) => {
+      const updated = await animalRepository.update(id, data, t);
+      await enterpriseService.subjectSaved(t, 'animals', updated);
+      return updated;
+    });
   }
 
   /**
@@ -572,6 +586,7 @@ class AnimalService {
 
     const groupData = {
       ...data,
+      enterprise_id: await enterpriseService.forNewSubject(data, breed.animal_type_enterprise_id),
       group_code: groupCode,
       initial_quantity: data.quantity,
       current_quantity: data.quantity,
@@ -601,7 +616,15 @@ class AnimalService {
       }
     }
 
-    return await animalGroupRepository.update(id, data);
+    if (data.enterprise_id !== group.enterprise_id) {
+      await enterpriseService.assertAssignable(data.enterprise_id);
+    }
+
+    return db.tx(async (t) => {
+      const updated = await animalGroupRepository.update(id, data, t);
+      await enterpriseService.subjectSaved(t, 'animal_groups', updated);
+      return updated;
+    });
   }
 
   /**

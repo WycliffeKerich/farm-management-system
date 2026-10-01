@@ -504,7 +504,13 @@ Follow-ups (carried into Phase 4):
      - Kinds: `observation`, `harvest`, `input_application`, `pest_incident`, `feeding`, `health_record`, `treatment`, `production`.
    - **Create functions** take an optional outer transaction, as `recordInputApplication` already did.
    - Tests: `activities.test.js`.
-4. **Enterprises**: CRUD, and link crop batches, animal groups and animals to an enterprise (default derived from type).
+4. ~~**Enterprises**: CRUD, and link crop batches, animal groups and animals to an enterprise (default derived from type).~~ Done in migration 019:
+   - **Schema.** `category` became `enterprise_type`, a fixed list: crops, mushrooms, poultry, dairy, livestock, apiculture, aquaculture, other. Existing rows were mapped by name and old category (Egg Production → poultry, Milk → dairy, animals → livestock, beekeeping → apiculture). Also new: `unit_of_output` (kg, litre, egg…), `is_active NOT NULL`, and case-insensitive unique names among live rows.
+   - **Links.** `enterprise_id` on `crop_batches`, `animals` and `animal_groups`. `crop_types` and `animal_types` gain an `enterprise_id` too, which is the default for their new subjects. A new subject takes the enterprise it is given (or none, with `null`); otherwise it takes its type's, while that enterprise is active. Choosing an inactive or missing enterprise is refused.
+   - **Activities.** `ActivityService.record` copies the subject's enterprise. When a subject is put under an enterprise, its activities that have none take it. Activities already costed to an enterprise keep it.
+   - **API.** `GET/POST/PUT/DELETE /enterprises`. The list is paged, filters by `enterprise_type` and `is_active`, and sorts by name, type or created date. `GET /enterprises/:id` adds counts of batches, animals, groups and activities. Writes are for owners and managers. A delete is refused (`IN_USE`) while anything refers to the enterprise; deactivate it instead.
+   - **Seeds.** Seeded enterprises carry types and units, and seeded crop and animal types link to them. Batches, animals and groups with no enterprise take their type's, and their activities follow. Re-running `npm run seed` applies this to an existing database.
+   - Tests: `enterprises.test.js`.
 5. **Audit log**: a trigger function attached to business tables; `SET LOCAL app.user_id` in the tx helper; owner-only viewer.
 6. **Attachments**: upload with a size and MIME whitelist; `StorageAdapter` (local disk); attach to pest incidents, treatments, receipts and inspections.
 7. **Settings**: `farm_settings` with typed accessors and a settings page (currency, timezone, farm coordinates).

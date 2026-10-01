@@ -127,6 +127,9 @@ module.exports = {
   // Withdrawal periods and pre-harvest intervals: which product a hold blocks
   WITHDRAWAL_PRODUCTS: ['milk', 'meat', 'egg'],
 
+  // Kinds of enterprise (enterprises_type_check, migration 019)
+  ENTERPRISE_TYPES: ['crops', 'mushrooms', 'poultry', 'dairy', 'livestock', 'apiculture', 'aquaculture', 'other'],
+
   // HTTP status codes
   HTTP_STATUS: {
     OK: 200,

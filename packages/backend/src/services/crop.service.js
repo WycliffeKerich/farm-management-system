@@ -14,6 +14,7 @@ const inventoryItemRepository = require('../repositories/inventory-item.reposito
 const inventoryService = require('./inventory.service');
 const withdrawalService = require('./withdrawal.service');
 const activityService = require('./activity.service');
+const enterpriseService = require('./enterprise.service');
 const { db } = require('../config/database');
 const { INVENTORY_REFERENCE_TYPES } = require('../config/constants');
 const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
@@ -58,6 +59,7 @@ class CropService {
     if (existing) {
       throw new ConflictError('Crop type with this name already exists');
     }
+    await enterpriseService.assertAssignable(data.enterprise_id);
     return await cropTypeRepository.create(data);
   }
 
@@ -78,6 +80,9 @@ class CropService {
       if (existing) {
         throw new ConflictError('Crop type with this name already exists');
       }
+    }
+    if (data.enterprise_id !== cropType.enterprise_id) {
+      await enterpriseService.assertAssignable(data.enterprise_id);
     }
 
     return await cropTypeRepository.update(id, data);
@@ -374,6 +379,7 @@ class CropService {
 
     const batchData = {
       ...data,
+      enterprise_id: await enterpriseService.forNewSubject(data, variety.crop_type_enterprise_id),
       batch_code: batchCode,
       expected_harvest_date: expectedHarvestDate,
       status: data.status || 'planted',
@@ -409,7 +415,15 @@ class CropService {
       }
     }
 
-    return await cropBatchRepository.update(id, data);
+    if (data.enterprise_id !== batch.enterprise_id) {
+      await enterpriseService.assertAssignable(data.enterprise_id);
+    }
+
+    return db.tx(async (t) => {
+      const updated = await cropBatchRepository.update(id, data, t);
+      await enterpriseService.subjectSaved(t, 'crop_batches', updated);
+      return updated;
+    });
   }
 
   /**

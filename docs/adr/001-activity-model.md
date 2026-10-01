@@ -59,7 +59,7 @@ Migration 017 creates the table and adds a nullable `activity_id` to each detail
 - maps `recorded_by` to `performed_by` through `employees.user_id` where such an employee exists;
 - sets the row's `activity_id`.
 
-The function can safely be run again. `enterprise_id` is filled in once batches, animals and groups link to enterprises (Phase 5 item 4). Once every service recorded activities, migration 018 ran the function once more, made `activity_id` `NOT NULL` and dropped the function.
+The function can safely be run again. `enterprise_id` was left empty; once batches, animals and groups linked to enterprises (migration 019), an activity copies its subject's enterprise when recorded, and a subject newly put under an enterprise passes it on to its activities that have none. Once every service recorded activities, migration 018 ran the function once more, made `activity_id` `NOT NULL` and dropped the function.
 
 ## Alternatives considered
 
