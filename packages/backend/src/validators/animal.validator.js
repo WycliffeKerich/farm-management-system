@@ -1,5 +1,58 @@
 const { body, param, query } = require('express-validator');
 
+// A product name or unit may be left out only when an inventory item supplies it
+const requiredWithoutItem = (value, { req }) => Boolean(value) || Boolean(req.body.inventory_item_id);
+
+// Taking feed or a medicine from stock: the item, and optionally one of its batches
+const stockFields = (prefix = '') => [
+  body(`${prefix}inventory_item_id`)
+    .optional({ values: 'null' })
+    .isInt({ min: 1 })
+    .withMessage('Invalid inventory item ID')
+    .toInt(),
+  body(`${prefix}inventory_batch_id`)
+    .optional({ values: 'null' })
+    .isInt({ min: 1 })
+    .withMessage('Invalid inventory batch ID')
+    .toInt(),
+];
+
+// One dose given under a treatment; prefix 'doses.*.' when inside a treatment
+const doseFields = (prefix = '') => [
+  ...stockFields(prefix),
+  body(`${prefix}product_name`)
+    .optional({ values: 'null' })
+    .trim()
+    .isLength({ max: 255 })
+    .withMessage('Product name must be at most 255 characters'),
+  body(`${prefix}quantity`)
+    .notEmpty()
+    .withMessage('Dose quantity is required')
+    .isFloat({ gt: 0 })
+    .withMessage('Dose quantity must be greater than 0'),
+  body(`${prefix}unit`)
+    .optional({ values: 'null' })
+    .trim()
+    .isLength({ max: 20 })
+    .withMessage('Unit must be at most 20 characters'),
+  body(`${prefix}administered_date`).optional({ values: 'null' }).isDate().withMessage('Invalid administered date'),
+  ...['milk', 'meat', 'egg'].map((product) =>
+    body(`${prefix}${product}_withdrawal_days`)
+      .optional({ values: 'null' })
+      .isInt({ min: 0, max: 3650 })
+      .withMessage(`${product[0].toUpperCase()}${product.slice(1)} withdrawal days must be 0 to 3650`)
+      .toInt()
+  ),
+  body(`${prefix}notes`).optional({ values: 'null' }).trim(),
+];
+
+// The owner's reason for recording produce or a sale inside a withdrawal period
+const overrideReason = body('override_reason')
+  .optional({ values: 'null' })
+  .trim()
+  .isLength({ max: 1000 })
+  .withMessage('Override reason must be at most 1000 characters');
+
 /**
  * Validators for animal management endpoints
  */
@@ -657,6 +710,39 @@ const animalValidators = {
     body('notes').optional().trim(),
   ],
 
+  // ==================== PRODUCTION RECORD VALIDATORS ====================
+
+  createProductionRecord: [
+    body('production_type_id')
+      .notEmpty()
+      .withMessage('Production type is required')
+      .isInt({ min: 1 })
+      .withMessage('Invalid production type ID'),
+    body('animal_id').optional({ values: 'null' }).isInt({ min: 1 }).withMessage('Invalid animal ID'),
+    body('animal_group_id').optional({ values: 'null' }).isInt({ min: 1 }).withMessage('Invalid animal group ID'),
+    body('production_date')
+      .notEmpty()
+      .withMessage('Production date is required')
+      .isDate()
+      .withMessage('Invalid production date format'),
+    body('quantity')
+      .notEmpty()
+      .withMessage('Quantity is required')
+      .isFloat({ min: 0 })
+      .withMessage('Quantity must be a positive number'),
+    body('unit_price').optional({ values: 'null' }).isFloat({ min: 0 }).withMessage('Unit price must be positive'),
+    overrideReason,
+  ],
+
+  updateProductionRecord: [
+    param('id').isInt().withMessage('Invalid production record ID'),
+    body('production_type_id').optional().isInt({ min: 1 }).withMessage('Invalid production type ID'),
+    body('production_date').optional().isDate().withMessage('Invalid production date format'),
+    body('quantity').optional().isFloat({ min: 0 }).withMessage('Quantity must be a positive number'),
+    body('unit_price').optional({ values: 'null' }).isFloat({ min: 0 }).withMessage('Unit price must be positive'),
+    overrideReason,
+  ],
+
   // ==================== DISEASE & TREATMENT VALIDATORS ====================
 
   createDiseaseTreatment: [
@@ -695,6 +781,15 @@ const animalValidators = {
       .withMessage('Status must be ongoing, completed, or chronic'),
     body('outcome').optional().trim(),
     body('notes').optional().trim(),
+    body('doses').optional().isArray({ max: 50 }).withMessage('Doses must be a list'),
+    ...doseFields('doses.*.'),
+  ],
+
+  addTreatmentDose: [param('id').isInt().withMessage('Invalid disease/treatment record ID'), ...doseFields()],
+
+  deleteTreatmentDose: [
+    param('id').isInt().withMessage('Invalid disease/treatment record ID'),
+    param('doseId').isInt().withMessage('Invalid dose ID'),
   ],
 
   updateDiseaseTreatment: [
@@ -746,10 +841,11 @@ const animalValidators = {
       .withMessage('Quantity must be a positive number'),
     body('unit')
       .trim()
-      .notEmpty()
-      .withMessage('Unit is required')
+      .custom(requiredWithoutItem)
+      .withMessage('Unit is required unless an inventory item is chosen')
       .isLength({ max: 20 })
       .withMessage('Unit must be at most 20 characters'),
+    ...stockFields(),
     body('feeding_time')
       .optional()
       .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/)
@@ -779,6 +875,11 @@ const animalValidators = {
     body('cost_per_unit').optional().isFloat({ min: 0 }).withMessage('Cost per unit must be a positive number'),
     body('total_cost').optional().isFloat({ min: 0 }).withMessage('Total cost must be a positive number'),
     body('notes').optional().trim(),
+    body('inventory_batch_id')
+      .optional({ values: 'null' })
+      .isInt({ min: 1 })
+      .withMessage('Invalid inventory batch ID')
+      .toInt(),
   ],
 
   // ==================== BREEDING RECORD VALIDATORS ====================
@@ -869,6 +970,7 @@ const animalValidators = {
       .isIn(['paid', 'pending', 'partial'])
       .withMessage('Payment status must be paid, pending, or partial'),
     body('notes').optional().trim(),
+    overrideReason,
   ],
 
   updateAnimalSale: [
@@ -905,6 +1007,7 @@ const animalValidators = {
       .isIn(['paid', 'pending', 'partial'])
       .withMessage('Payment status must be paid, pending, or partial'),
     body('notes').optional().trim(),
+    overrideReason,
   ],
 
   // Incubation record validators

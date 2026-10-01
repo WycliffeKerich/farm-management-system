@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import animalService from '@/services/animal.service';
 import Button from 'primevue/button';
@@ -13,9 +13,17 @@ import Select from 'primevue/select';
 import DatePicker from 'primevue/datepicker';
 import Tag from 'primevue/tag';
 import RadioButton from 'primevue/radiobutton';
-import { toApiDate } from '@/utils/dates';
+import { fromApiDate, toApiDate } from '@/utils/dates';
+import { validationMessage } from '@/utils/forms';
+import { applyItemToDose, emptyDose, toDosesPayload } from '@/utils/inventory';
+import { useStockItems } from '@/composables/useStockItems';
+import { useAuthStore } from '@/stores/auth.store';
+import ProductPicker from '@/components/inventory/ProductPicker.vue';
 
 const toast = useToast();
+const authStore = useAuthStore();
+const stock = useStockItems();
+const canRemoveDoses = computed(() => authStore.hasRole(['owner', 'manager']));
 
 // State
 const records = ref([]);
@@ -33,6 +41,12 @@ const submitted = ref(false);
 const searchQuery = ref('');
 const sourceType = ref('individual');
 const recordToDelete = ref(null);
+
+// Doses to record with this save, and (when editing) the doses already given
+const newDoses = ref([]);
+const savedDoses = ref([]);
+const loadingDoses = ref(false);
+const removingDoseId = ref(null);
 
 const filters = ref({
     status: null,
@@ -158,13 +172,53 @@ const openNewRecordDialog = () => {
     };
     sourceType.value = 'individual';
     submitted.value = false;
+    newDoses.value = [];
+    savedDoses.value = [];
     recordDialog.value = true;
+    stock.load();
+};
+
+const loadSavedDoses = async (id) => {
+    loadingDoses.value = true;
+    try {
+        const response = await animalService.getDiseaseTreatmentById(id);
+        savedDoses.value = response.data.data.doses || [];
+    } catch (error) {
+        toast.add({ severity: 'error', summary: 'Error', detail: validationMessage(error, 'Failed to load doses'), life: 3000 });
+    } finally {
+        loadingDoses.value = false;
+    }
+};
+
+const addDose = () => {
+    newDoses.value.push(emptyDose(recordForm.value.treatment_start_date || recordForm.value.diagnosis_date || new Date()));
+};
+
+const removeNewDose = (index) => {
+    newDoses.value.splice(index, 1);
+};
+
+const onDosePicked = (index, item) => {
+    newDoses.value[index] = applyItemToDose(newDoses.value[index], item);
+};
+
+const removeSavedDose = async (dose) => {
+    removingDoseId.value = dose.id;
+    try {
+        await animalService.deleteTreatmentDose(recordForm.value.id, dose.id);
+        toast.add({ severity: 'success', summary: 'Removed', detail: dose.inventory_item_id ? 'Dose removed and stock returned' : 'Dose removed', life: 3000 });
+        await loadSavedDoses(recordForm.value.id);
+    } catch (error) {
+        toast.add({ severity: 'error', summary: 'Error', detail: validationMessage(error, 'Failed to remove dose'), life: 5000 });
+    } finally {
+        removingDoseId.value = null;
+    }
 };
 
 const editRecord = (record) => {
     recordForm.value = {
         id: record.id,
-        diagnosis_date: new Date(record.diagnosis_date),
+        diagnosis_date: fromApiDate(record.diagnosis_date),
         disease_name: record.disease_name,
         animal_id: record.animal_id,
         animal_group_id: record.animal_group_id,
@@ -173,8 +227,8 @@ const editRecord = (record) => {
         diagnosis: record.diagnosis || '',
         treatment_plan: record.treatment_plan || '',
         medications: record.medications || '',
-        treatment_start_date: record.treatment_start_date ? new Date(record.treatment_start_date) : null,
-        treatment_end_date: record.treatment_end_date ? new Date(record.treatment_end_date) : null,
+        treatment_start_date: record.treatment_start_date ? fromApiDate(record.treatment_start_date) : null,
+        treatment_end_date: record.treatment_end_date ? fromApiDate(record.treatment_end_date) : null,
         veterinarian: record.veterinarian || '',
         cost: record.cost,
         status: record.status || 'ongoing',
@@ -183,7 +237,11 @@ const editRecord = (record) => {
     };
     sourceType.value = record.animal_id ? 'individual' : 'group';
     submitted.value = false;
+    newDoses.value = [];
+    savedDoses.value = [];
     recordDialog.value = true;
+    stock.load();
+    loadSavedDoses(record.id);
 };
 
 const saveRecord = async () => {
@@ -210,12 +268,19 @@ const saveRecord = async () => {
             treatment_end_date: recordForm.value.treatment_end_date ? toApiDate(recordForm.value.treatment_end_date) : null
         };
 
+        const doses = toDosesPayload(newDoses.value);
+
         if (recordForm.value.id) {
             await animalService.updateDiseaseTreatment(recordForm.value.id, data);
+            // Each dose is its own request; one that fails, and those after it, stay in the form to save again
+            for (const row of newDoses.value.filter((dose) => toDosesPayload([dose]).length)) {
+                await animalService.addTreatmentDose(recordForm.value.id, toDosesPayload([row])[0]);
+                newDoses.value = newDoses.value.filter((dose) => dose !== row);
+            }
             toast.add({ severity: 'success', summary: 'Success', detail: 'Record updated', life: 3000 });
         } else {
-            await animalService.createDiseaseTreatment(data);
-            toast.add({ severity: 'success', summary: 'Success', detail: 'Record created', life: 3000 });
+            await animalService.createDiseaseTreatment({ ...data, doses });
+            toast.add({ severity: 'success', summary: 'Success', detail: doses.length ? `Record created with ${doses.length} dose(s)` : 'Record created', life: 3000 });
         }
 
         recordDialog.value = false;
@@ -225,8 +290,8 @@ const saveRecord = async () => {
         toast.add({
             severity: 'error',
             summary: 'Error',
-            detail: error.response?.data?.message || 'Failed to save record',
-            life: 3000
+            detail: validationMessage(error, 'Failed to save record'),
+            life: 5000
         });
     } finally {
         saving.value = false;
@@ -539,9 +604,76 @@ onMounted(() => {
                     <Textarea id="treatment_plan" v-model="recordForm.treatment_plan" rows="3" placeholder="Describe treatment plan" />
                 </div>
 
+                <div class="flex flex-col gap-3">
+                    <div class="flex items-center justify-between">
+                        <label class="font-medium">Doses Given</label>
+                        <Button label="Add Dose" icon="pi pi-plus" size="small" text @click="addDose" />
+                    </div>
+                    <p class="text-sm text-surface-500 -mt-2">A dose taken from stock draws it and sets the withdrawal periods; produce and sales are held until they end.</p>
+
+                    <div v-if="loadingDoses" class="text-sm text-surface-500"><i class="pi pi-spin pi-spinner mr-2"></i>Loading doses...</div>
+                    <div v-for="dose in savedDoses" :key="`saved-${dose.id}`" class="flex items-center justify-between gap-4 p-3 rounded border border-surface-200 dark:border-surface-700">
+                        <div>
+                            <div class="font-medium">{{ dose.product_name }} · {{ dose.quantity }} {{ dose.unit }}</div>
+                            <div class="text-sm text-surface-500">
+                                Given {{ formatDate(dose.administered_date) }}
+                                <template v-if="dose.milk_safe_from"> · Milk from {{ formatDate(dose.milk_safe_from) }}</template>
+                                <template v-if="dose.meat_safe_from"> · Meat from {{ formatDate(dose.meat_safe_from) }}</template>
+                                <template v-if="dose.egg_safe_from"> · Eggs from {{ formatDate(dose.egg_safe_from) }}</template>
+                            </div>
+                        </div>
+                        <Button v-if="canRemoveDoses" icon="pi pi-trash" severity="danger" text rounded :loading="removingDoseId === dose.id" @click="removeSavedDose(dose)" v-tooltip.top="'Remove dose'" />
+                    </div>
+
+                    <div v-for="(dose, index) in newDoses" :key="`new-${index}`" class="flex flex-col gap-3 p-3 rounded border border-primary-200 dark:border-primary-800">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="flex flex-col gap-2">
+                                <label :for="`dose_item_${index}`" class="text-sm">From Stock</label>
+                                <ProductPicker :modelValue="dose.inventory_item_id" :inputId="`dose_item_${index}`" :items="stock.items.value" :loading="stock.loading.value" @select="onDosePicked(index, $event)" />
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <label :for="`dose_name_${index}`" class="text-sm">Product Name {{ dose.inventory_item_id ? '' : '*' }}</label>
+                                <InputText :id="`dose_name_${index}`" v-model="dose.product_name" :disabled="!!dose.inventory_item_id" placeholder="Medicine given" />
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div class="flex flex-col gap-2">
+                                <label :for="`dose_quantity_${index}`" class="text-sm">Quantity *</label>
+                                <InputNumber :inputId="`dose_quantity_${index}`" v-model="dose.quantity" :minFractionDigits="0" :maxFractionDigits="2" :min="0" />
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <label :for="`dose_unit_${index}`" class="text-sm">Unit</label>
+                                <InputText :id="`dose_unit_${index}`" v-model="dose.unit" placeholder="ml" />
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <label :for="`dose_date_${index}`" class="text-sm">Given On</label>
+                                <DatePicker :inputId="`dose_date_${index}`" v-model="dose.administered_date" dateFormat="yy-mm-dd" showIcon />
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div class="flex flex-col gap-2">
+                                <label :for="`dose_milk_${index}`" class="text-sm">Milk Withdrawal (days)</label>
+                                <InputNumber :inputId="`dose_milk_${index}`" v-model="dose.milk_withdrawal_days" :min="0" :max="3650" />
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <label :for="`dose_meat_${index}`" class="text-sm">Meat Withdrawal (days)</label>
+                                <InputNumber :inputId="`dose_meat_${index}`" v-model="dose.meat_withdrawal_days" :min="0" :max="3650" />
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <label :for="`dose_egg_${index}`" class="text-sm">Egg Withdrawal (days)</label>
+                                <InputNumber :inputId="`dose_egg_${index}`" v-model="dose.egg_withdrawal_days" :min="0" :max="3650" />
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <small class="text-surface-500">{{ dose.inventory_item_id ? "A shorter period than the product's label is not used." : '' }}</small>
+                            <Button label="Remove" icon="pi pi-times" severity="secondary" size="small" text @click="removeNewDose(index)" />
+                        </div>
+                    </div>
+                </div>
+
                 <div class="flex flex-col gap-2">
-                    <label for="medications">Medications</label>
-                    <Textarea id="medications" v-model="recordForm.medications" rows="2" placeholder="List medications and dosage" />
+                    <label for="medications">Other Medications (notes)</label>
+                    <Textarea id="medications" v-model="recordForm.medications" rows="2" placeholder="Anything not recorded as a dose above" />
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">

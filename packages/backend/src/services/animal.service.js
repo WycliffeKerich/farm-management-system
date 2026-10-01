@@ -8,15 +8,13 @@ const animalCarePlanRepository = require('../repositories/animal-care-plan.repos
 const animalCarePlanTaskRepository = require('../repositories/animal-care-plan-task.repository');
 const animalCareScheduleRepository = require('../repositories/animal-care-schedule.repository');
 const scheduledAnimalTaskRepository = require('../repositories/scheduled-animal-task.repository');
-const animalHealthRecordRepository = require('../repositories/animal-health-record.repository');
-const animalDiseaseTreatmentRepository = require('../repositories/animal-disease-treatment.repository');
-const animalFeedRecordRepository = require('../repositories/animal-feed-record.repository');
 const breedingRecordRepository = require('../repositories/breeding-record.repository');
 const animalSaleRepository = require('../repositories/animal-sale.repository');
 const incubationRecordRepository = require('../repositories/incubation-record.repository');
+const withdrawalService = require('./withdrawal.service');
 const { db } = require('../config/database');
 const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
-const { addDays } = require('../utils/dates');
+const { addDays, toDateString } = require('../utils/dates');
 
 /**
  * Service for animal management operations
@@ -425,7 +423,23 @@ class AnimalService {
     if (!animal) {
       throw new NotFoundError('Animal not found');
     }
+    if (status === 'sold' && animal.status !== 'sold') {
+      await this.assertNoMeatWithdrawal('animal', animal.id, statusDate);
+    }
     return await animalRepository.updateStatus(id, status, statusDate);
+  }
+
+  /**
+   * Selling an animal, or animals from a group, without a sale record leaves
+   * nowhere to keep an owner's override, so inside a meat withdrawal period it
+   * is refused outright (409 WITHDRAWAL_ACTIVE). The owner overrides by
+   * recording the sale itself (POST /animals/sales).
+   * @param {string} referenceType - 'animal' or 'animal_group'
+   * @param {number} id - Animal or group ID
+   * @param {string|Date} date - Sale date
+   */
+  async assertNoMeatWithdrawal(referenceType, id, date) {
+    await withdrawalService.checkSale({ reference_type: referenceType, reference_id: id, sale_date: date }, {});
   }
 
   /**
@@ -442,6 +456,7 @@ class AnimalService {
     if (animal.status !== 'active') {
       throw new ConflictError('Can only sell active animals');
     }
+    await this.assertNoMeatWithdrawal('animal', animal.id, saleDate);
     return await animalRepository.recordSale(id, saleDate);
   }
 
@@ -630,8 +645,13 @@ class AnimalService {
       throw new ValidationError('Cannot remove more animals than currently in group');
     }
 
+    const adjustmentDate = data.adjustment_date || new Date();
+    if (data.type === 'sale') {
+      await this.assertNoMeatWithdrawal('animal_group', groupId, adjustmentDate);
+    }
+
     return await animalGroupRepository.recordRemoval(groupId, data.quantity, data.type || 'removal', {
-      adjustment_date: data.adjustment_date || new Date(),
+      adjustment_date: adjustmentDate,
       reason: data.reason,
       unit_value: data.unit_value,
       total_value: data.total_value,
@@ -1433,442 +1453,6 @@ class AnimalService {
     };
   }
 
-  // ==================== HEALTH RECORDS ====================
-
-  /**
-   * Get all health records with optional filters
-   * @param {Object} filters - Optional filters
-   * @returns {Promise<Array>}
-   */
-  async getAllHealthRecords(filters = {}) {
-    return await animalHealthRecordRepository.findAllWithDetails(filters);
-  }
-
-  /**
-   * Get health record by ID
-   * @param {number} id - Health record ID
-   * @returns {Promise<Object>}
-   */
-  async getHealthRecordById(id) {
-    const record = await animalHealthRecordRepository.findByIdWithDetails(id);
-    if (!record) {
-      throw new NotFoundError('Health record not found');
-    }
-    return record;
-  }
-
-  /**
-   * Get health records for an animal
-   * @param {number} animalId - Animal ID
-   * @returns {Promise<Array>}
-   */
-  async getHealthRecordsByAnimal(animalId) {
-    return await animalHealthRecordRepository.findByAnimalId(animalId);
-  }
-
-  /**
-   * Get health records for a group
-   * @param {number} groupId - Group ID
-   * @returns {Promise<Array>}
-   */
-  async getHealthRecordsByGroup(groupId) {
-    return await animalHealthRecordRepository.findByGroupId(groupId);
-  }
-
-  /**
-   * Create a health record
-   * @param {Object} data - Health record data
-   * @returns {Promise<Object>}
-   */
-  async createHealthRecord(data) {
-    if (!data.animal_id && !data.animal_group_id) {
-      throw new ValidationError('Either animal_id or animal_group_id is required');
-    }
-
-    if (data.animal_id && data.animal_group_id) {
-      throw new ValidationError('Cannot specify both animal_id and animal_group_id');
-    }
-
-    // Verify animal or group exists
-    if (data.animal_id) {
-      const animal = await animalRepository.findById(data.animal_id);
-      if (!animal) {
-        throw new NotFoundError('Animal not found');
-      }
-    }
-
-    if (data.animal_group_id) {
-      const group = await animalGroupRepository.findById(data.animal_group_id);
-      if (!group) {
-        throw new NotFoundError('Animal group not found');
-      }
-    }
-
-    return await animalHealthRecordRepository.create(data);
-  }
-
-  /**
-   * Update a health record
-   * @param {number} id - Health record ID
-   * @param {Object} data - Updated data
-   * @returns {Promise<Object>}
-   */
-  async updateHealthRecord(id, data) {
-    const record = await animalHealthRecordRepository.findById(id);
-    if (!record) {
-      throw new NotFoundError('Health record not found');
-    }
-    return await animalHealthRecordRepository.update(id, data);
-  }
-
-  /**
-   * Delete a health record
-   * @param {number} id - Health record ID
-   * @returns {Promise<void>}
-   */
-  async deleteHealthRecord(id) {
-    const record = await animalHealthRecordRepository.findById(id);
-    if (!record) {
-      throw new NotFoundError('Health record not found');
-    }
-    await animalHealthRecordRepository.softDelete(id);
-  }
-
-  /**
-   * Get health statistics
-   * @param {Object} filters - Optional filters
-   * @returns {Promise<Object>}
-   */
-  async getHealthStatistics(filters = {}) {
-    return await animalHealthRecordRepository.getStatistics(filters);
-  }
-
-  /**
-   * Get upcoming followups
-   * @param {number} days - Days to look ahead
-   * @param {number} limit - Max records
-   * @returns {Promise<Array>}
-   */
-  async getUpcomingFollowups(days = 30, limit = 10) {
-    return await animalHealthRecordRepository.getUpcomingFollowups(days, limit);
-  }
-
-  /**
-   * Get overdue followups
-   * @param {number} limit - Max records
-   * @returns {Promise<Array>}
-   */
-  async getOverdueFollowups(limit = 10) {
-    return await animalHealthRecordRepository.getOverdueFollowups(limit);
-  }
-
-  // ==================== DISEASE & TREATMENT ====================
-
-  /**
-   * Get all disease/treatment records with optional filters
-   * @param {Object} filters - Optional filters
-   * @returns {Promise<Array>}
-   */
-  async getAllDiseaseTreatments(filters = {}) {
-    return await animalDiseaseTreatmentRepository.findAllWithDetails(filters);
-  }
-
-  /**
-   * Get disease/treatment record by ID
-   * @param {number} id - Disease/treatment record ID
-   * @returns {Promise<Object>}
-   */
-  async getDiseaseTreatmentById(id) {
-    const record = await animalDiseaseTreatmentRepository.findByIdWithDetails(id);
-    if (!record) {
-      throw new NotFoundError('Disease/treatment record not found');
-    }
-    return record;
-  }
-
-  /**
-   * Get disease/treatment records for an animal
-   * @param {number} animalId - Animal ID
-   * @returns {Promise<Array>}
-   */
-  async getDiseaseTreatmentsByAnimal(animalId) {
-    return await animalDiseaseTreatmentRepository.findByAnimalId(animalId);
-  }
-
-  /**
-   * Get disease/treatment records for a group
-   * @param {number} groupId - Group ID
-   * @returns {Promise<Array>}
-   */
-  async getDiseaseTreatmentsByGroup(groupId) {
-    return await animalDiseaseTreatmentRepository.findByGroupId(groupId);
-  }
-
-  /**
-   * Create a disease/treatment record
-   * @param {Object} data - Disease/treatment data
-   * @returns {Promise<Object>}
-   */
-  async createDiseaseTreatment(data) {
-    if (!data.animal_id && !data.animal_group_id) {
-      throw new ValidationError('Either animal_id or animal_group_id is required');
-    }
-
-    if (data.animal_id && data.animal_group_id) {
-      throw new ValidationError('Cannot specify both animal_id and animal_group_id');
-    }
-
-    // Verify animal or group exists
-    if (data.animal_id) {
-      const animal = await animalRepository.findById(data.animal_id);
-      if (!animal) {
-        throw new NotFoundError('Animal not found');
-      }
-    }
-
-    if (data.animal_group_id) {
-      const group = await animalGroupRepository.findById(data.animal_group_id);
-      if (!group) {
-        throw new NotFoundError('Animal group not found');
-      }
-    }
-
-    return await animalDiseaseTreatmentRepository.create(data);
-  }
-
-  /**
-   * Update a disease/treatment record
-   * @param {number} id - Disease/treatment record ID
-   * @param {Object} data - Updated data
-   * @returns {Promise<Object>}
-   */
-  async updateDiseaseTreatment(id, data) {
-    const record = await animalDiseaseTreatmentRepository.findById(id);
-    if (!record) {
-      throw new NotFoundError('Disease/treatment record not found');
-    }
-    return await animalDiseaseTreatmentRepository.update(id, data);
-  }
-
-  /**
-   * Delete a disease/treatment record
-   * @param {number} id - Disease/treatment record ID
-   * @returns {Promise<void>}
-   */
-  async deleteDiseaseTreatment(id) {
-    const record = await animalDiseaseTreatmentRepository.findById(id);
-    if (!record) {
-      throw new NotFoundError('Disease/treatment record not found');
-    }
-    await animalDiseaseTreatmentRepository.softDelete(id);
-  }
-
-  /**
-   * Get disease statistics
-   * @param {Object} filters - Optional filters
-   * @returns {Promise<Object>}
-   */
-  async getDiseaseStatistics(filters = {}) {
-    return await animalDiseaseTreatmentRepository.getStatistics(filters);
-  }
-
-  /**
-   * Get disease occurrence summary
-   * @param {Object} filters - Optional filters
-   * @returns {Promise<Array>}
-   */
-  async getDiseaseOccurrenceSummary(filters = {}) {
-    return await animalDiseaseTreatmentRepository.getDiseaseOccurrenceSummary(filters);
-  }
-
-  /**
-   * Get ongoing treatments
-   * @param {number} limit - Max records
-   * @returns {Promise<Array>}
-   */
-  async getOngoingTreatments(limit = 20) {
-    return await animalDiseaseTreatmentRepository.getOngoingTreatments(limit);
-  }
-
-  /**
-   * Get chronic conditions
-   * @param {number} limit - Max records
-   * @returns {Promise<Array>}
-   */
-  async getChronicConditions(limit = 20) {
-    return await animalDiseaseTreatmentRepository.getChronicConditions(limit);
-  }
-
-  /**
-   * Get critical cases
-   * @param {number} limit - Max records
-   * @returns {Promise<Array>}
-   */
-  async getCriticalCases(limit = 10) {
-    return await animalDiseaseTreatmentRepository.getCriticalCases(limit);
-  }
-
-  // ==================== FEED RECORDS ====================
-
-  /**
-   * Get all feed records with optional filters
-   * @param {Object} filters - Optional filters
-   * @returns {Promise<Array>}
-   */
-  async getAllFeedRecords(filters = {}) {
-    return await animalFeedRecordRepository.findAllWithDetails(filters);
-  }
-
-  /**
-   * Get feed record by ID
-   * @param {number} id - Feed record ID
-   * @returns {Promise<Object>}
-   */
-  async getFeedRecordById(id) {
-    const record = await animalFeedRecordRepository.findByIdWithDetails(id);
-    if (!record) {
-      throw new NotFoundError('Feed record not found');
-    }
-    return record;
-  }
-
-  /**
-   * Get feed records for an animal
-   * @param {number} animalId - Animal ID
-   * @returns {Promise<Array>}
-   */
-  async getFeedRecordsByAnimal(animalId) {
-    return await animalFeedRecordRepository.findByAnimalId(animalId);
-  }
-
-  /**
-   * Get feed records for a group
-   * @param {number} groupId - Group ID
-   * @returns {Promise<Array>}
-   */
-  async getFeedRecordsByGroup(groupId) {
-    return await animalFeedRecordRepository.findByGroupId(groupId);
-  }
-
-  /**
-   * Create a feed record
-   * @param {Object} data - Feed record data
-   * @returns {Promise<Object>}
-   */
-  async createFeedRecord(data) {
-    if (!data.animal_id && !data.animal_group_id) {
-      throw new ValidationError('Either animal_id or animal_group_id is required');
-    }
-
-    if (data.animal_id && data.animal_group_id) {
-      throw new ValidationError('Cannot specify both animal_id and animal_group_id');
-    }
-
-    // Verify animal or group exists
-    if (data.animal_id) {
-      const animal = await animalRepository.findById(data.animal_id);
-      if (!animal) {
-        throw new NotFoundError('Animal not found');
-      }
-    }
-
-    if (data.animal_group_id) {
-      const group = await animalGroupRepository.findById(data.animal_group_id);
-      if (!group) {
-        throw new NotFoundError('Animal group not found');
-      }
-    }
-
-    // Calculate total_cost if not provided
-    if (!data.total_cost && data.quantity && data.cost_per_unit) {
-      data.total_cost = data.quantity * data.cost_per_unit;
-    }
-
-    return await animalFeedRecordRepository.create(data);
-  }
-
-  /**
-   * Update a feed record
-   * @param {number} id - Feed record ID
-   * @param {Object} data - Updated data
-   * @returns {Promise<Object>}
-   */
-  async updateFeedRecord(id, data) {
-    const record = await animalFeedRecordRepository.findById(id);
-    if (!record) {
-      throw new NotFoundError('Feed record not found');
-    }
-
-    // Recalculate total_cost if quantity or cost_per_unit changed
-    if (data.quantity || data.cost_per_unit) {
-      const quantity = data.quantity || record.quantity;
-      const costPerUnit = data.cost_per_unit || record.cost_per_unit;
-      data.total_cost = quantity * costPerUnit;
-    }
-
-    return await animalFeedRecordRepository.update(id, data);
-  }
-
-  /**
-   * Delete a feed record
-   * @param {number} id - Feed record ID
-   * @returns {Promise<void>}
-   */
-  async deleteFeedRecord(id) {
-    const record = await animalFeedRecordRepository.findById(id);
-    if (!record) {
-      throw new NotFoundError('Feed record not found');
-    }
-    await animalFeedRecordRepository.softDelete(id);
-  }
-
-  /**
-   * Get feed consumption statistics
-   * @param {Object} filters - Optional filters
-   * @returns {Promise<Object>}
-   */
-  async getFeedStatistics(filters = {}) {
-    return await animalFeedRecordRepository.getStatistics(filters);
-  }
-
-  /**
-   * Get consumption by feed type
-   * @param {Object} filters - Optional filters
-   * @returns {Promise<Array>}
-   */
-  async getConsumptionByFeedType(filters = {}) {
-    return await animalFeedRecordRepository.getConsumptionByFeedType(filters);
-  }
-
-  /**
-   * Get daily consumption
-   * @param {Object} filters - Optional filters
-   * @returns {Promise<Array>}
-   */
-  async getDailyFeedConsumption(filters = {}) {
-    return await animalFeedRecordRepository.getDailyConsumption(filters);
-  }
-
-  /**
-   * Get feed cost by animal type
-   * @param {Object} filters - Optional filters
-   * @returns {Promise<Array>}
-   */
-  async getFeedCostByAnimalType(filters = {}) {
-    return await animalFeedRecordRepository.getCostByAnimalType(filters);
-  }
-
-  /**
-   * Get average daily feed cost
-   * @param {number} animalId - Animal ID
-   * @param {number} groupId - Group ID
-   * @param {number} days - Days to calculate
-   * @returns {Promise<Object>}
-   */
-  async getAverageDailyFeedCost(animalId = null, groupId = null, days = 30) {
-    return await animalFeedRecordRepository.getAverageDailyCost(animalId, groupId, days);
-  }
-
   // ==================== BREEDING RECORDS ====================
 
   /**
@@ -2075,11 +1659,14 @@ class AnimalService {
   }
 
   /**
-   * Create an animal sale record
-   * @param {Object} data - Sale data
+   * Create an animal sale record. Selling an animal, or animals from a group,
+   * inside a meat withdrawal period is refused (409 WITHDRAWAL_ACTIVE) unless
+   * the owner gives an override_reason.
+   * @param {Object} data - Sale data, with optional override_reason
+   * @param {Object} user - { id, role }
    * @returns {Promise<Object>}
    */
-  async createAnimalSale(data) {
+  async createAnimalSale(data, user) {
     // Validate that either animal_id or animal_group_id is provided in reference
     if (!data.reference_type || !data.reference_id) {
       throw new ValidationError('Reference type and ID are required');
@@ -2109,7 +1696,7 @@ class AnimalService {
       }
 
       return await db.tx(async (t) => {
-        const sale = await animalSaleRepository.create(data, t);
+        const sale = await animalSaleRepository.create(await this.withSaleOverride(data, user, t), t);
         await animalRepository.updateStatus(data.reference_id, 'sold', data.sale_date, t);
         return sale;
       });
@@ -2124,7 +1711,7 @@ class AnimalService {
     }
 
     return await db.tx(async (t) => {
-      const sale = await animalSaleRepository.create(data, t);
+      const sale = await animalSaleRepository.create(await this.withSaleOverride(data, user, t), t);
       // Throws (and rolls back the sale) if the group does not have enough animals
       await animalGroupRepository.recordRemoval(
         data.reference_id,
@@ -2147,25 +1734,49 @@ class AnimalService {
   }
 
   /**
-   * Update an animal sale record
+   * Update an animal sale record. Moving it to another date checks the meat
+   * withdrawal period again, as for a new sale.
    * @param {number} id - Sale ID
-   * @param {Object} data - Updated data
+   * @param {Object} data - Updated data, with optional override_reason
+   * @param {Object} user - { id, role }
    * @returns {Promise<Object>}
    */
-  async updateAnimalSale(id, data) {
-    const sale = await animalSaleRepository.findById(id);
-    if (!sale) {
-      throw new NotFoundError('Sale record not found');
-    }
+  async updateAnimalSale(id, data, user) {
+    return db.tx(async (t) => {
+      const sale = await animalSaleRepository.findById(id, t);
+      if (!sale) {
+        throw new NotFoundError('Sale record not found');
+      }
 
-    // Recalculate total if quantity or unit_price changed
-    if (data.quantity || data.unit_price) {
-      const quantity = data.quantity || sale.quantity;
-      const unitPrice = data.unit_price || sale.unit_price;
-      data.total_amount = quantity * unitPrice;
-    }
+      const changes = withdrawalService.withoutOverride(data);
+      // Recalculate total if quantity or unit_price changed
+      if (changes.quantity || changes.unit_price) {
+        const quantity = changes.quantity || sale.quantity;
+        const unitPrice = changes.unit_price || sale.unit_price;
+        changes.total_amount = quantity * unitPrice;
+      }
 
-    return await animalSaleRepository.update(id, data);
+      if (changes.sale_date && toDateString(changes.sale_date) !== sale.sale_date) {
+        const override = await withdrawalService.checkSale(
+          { ...sale, sale_date: changes.sale_date },
+          { user, override_reason: data.override_reason },
+          t
+        );
+        Object.assign(changes, override);
+      }
+
+      return await animalSaleRepository.update(sale.id, changes, t);
+    });
+  }
+
+  /**
+   * Sale data to save: the client's fields without override columns, plus
+   * the override if the owner had to give one
+   * @private
+   */
+  async withSaleOverride(data, user, t) {
+    const override = await withdrawalService.checkSale(data, { user, override_reason: data.override_reason }, t);
+    return { ...withdrawalService.withoutOverride(data), ...override };
   }
 
   /**

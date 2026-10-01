@@ -1,4 +1,5 @@
 const inventoryService = require('../services/inventory.service');
+const inventoryReportService = require('../services/inventory-report.service');
 
 /**
  * Controller for inventory management endpoints
@@ -66,6 +67,44 @@ class InventoryController {
     }
   }
 
+  // ==================== REPORTS ====================
+
+  /**
+   * Stock valuation at batch cost
+   */
+  async getValuationReport(req, res, next) {
+    try {
+      const report = await inventoryReportService.valuation({ category_id: req.query.category_id });
+      res.json({ success: true, data: report });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Items to reorder
+   */
+  async getReorderReport(req, res, next) {
+    try {
+      const report = await inventoryReportService.reorder(req.query.usage_days || undefined);
+      res.json({ success: true, data: report });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Stock expiring soon, and expired stock not yet written off
+   */
+  async getExpiringReport(req, res, next) {
+    try {
+      const report = await inventoryReportService.expiring(req.query.days || undefined);
+      res.json({ success: true, data: report });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // ==================== ITEMS ====================
 
   /**
@@ -73,17 +112,20 @@ class InventoryController {
    */
   async getItems(req, res, next) {
     try {
-      const { page, limit, category_id, search, low_stock, expiring_days } = req.query;
+      const { page, limit, category_id, search, low_stock, stock_status, expiring_days, sort, order } =
+        req.query;
+      const filters = { category_id, search, low_stock: low_stock === 'true', stock_status, expiring_days };
 
       if (page || limit) {
         const result = await inventoryService.paginateItems(
           parseInt(page, 10) || 1,
           parseInt(limit, 10) || 20,
-          { category_id, search, low_stock: low_stock === 'true', expiring_days }
+          filters,
+          { field: sort, order }
         );
         res.json({ success: true, ...result });
       } else {
-        const items = await inventoryService.getAllItems({ category_id, search });
+        const items = await inventoryService.getAllItems(filters);
         res.json({ success: true, data: items });
       }
     } catch (error) {
@@ -193,15 +235,15 @@ class InventoryController {
   }
 
   /**
-   * Use stock from an item's batches, earliest expiry first
+   * Use stock from an item: batches earliest expiry first, then unbatched stock
    */
   async useStock(req, res, next) {
     try {
-      const { quantity, reference_type, reference_id, notes, transaction_date } = req.body;
-      const result = await inventoryService.useStockFromBatches(
+      const { quantity, unit, inventory_batch_id, reference_type, reference_id, notes, transaction_date } = req.body;
+      const result = await inventoryService.useStock(
         req.params.id,
         quantity,
-        { reference_type, reference_id, notes, transaction_date },
+        { unit, inventory_batch_id, reference_type, reference_id, notes, transaction_date },
         req.user.id
       );
       res.status(201).json({ success: true, data: result });

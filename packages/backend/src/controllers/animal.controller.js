@@ -1,4 +1,6 @@
 const animalService = require('../services/animal.service');
+const animalHealthService = require('../services/animal-health.service');
+const animalFeedService = require('../services/animal-feed.service');
 
 /**
  * Controller for animal management endpoints
@@ -743,7 +745,7 @@ class AnimalController {
   async getAllHealthRecords(req, res, next) {
     try {
       const filters = req.query;
-      const records = await animalService.getAllHealthRecords(filters);
+      const records = await animalHealthService.getAllHealthRecords(filters);
       res.json({ success: true, data: records });
     } catch (error) {
       next(error);
@@ -753,7 +755,7 @@ class AnimalController {
   async getHealthRecordById(req, res, next) {
     try {
       const { id } = req.params;
-      const record = await animalService.getHealthRecordById(parseInt(id));
+      const record = await animalHealthService.getHealthRecordById(parseInt(id));
       res.json({ success: true, data: record });
     } catch (error) {
       next(error);
@@ -763,7 +765,7 @@ class AnimalController {
   async getHealthRecordsByAnimal(req, res, next) {
     try {
       const { animalId } = req.params;
-      const records = await animalService.getHealthRecordsByAnimal(parseInt(animalId));
+      const records = await animalHealthService.getHealthRecordsByAnimal(parseInt(animalId));
       res.json({ success: true, data: records });
     } catch (error) {
       next(error);
@@ -773,7 +775,7 @@ class AnimalController {
   async getHealthRecordsByGroup(req, res, next) {
     try {
       const { groupId } = req.params;
-      const records = await animalService.getHealthRecordsByGroup(parseInt(groupId));
+      const records = await animalHealthService.getHealthRecordsByGroup(parseInt(groupId));
       res.json({ success: true, data: records });
     } catch (error) {
       next(error);
@@ -783,7 +785,7 @@ class AnimalController {
   async createHealthRecord(req, res, next) {
     try {
       const data = { ...req.body, recorded_by: req.user.id };
-      const record = await animalService.createHealthRecord(data);
+      const record = await animalHealthService.createHealthRecord(data);
       res.status(201).json({ success: true, data: record });
     } catch (error) {
       next(error);
@@ -793,7 +795,7 @@ class AnimalController {
   async updateHealthRecord(req, res, next) {
     try {
       const { id } = req.params;
-      const record = await animalService.updateHealthRecord(parseInt(id), req.body);
+      const record = await animalHealthService.updateHealthRecord(parseInt(id), req.body);
       res.json({ success: true, data: record });
     } catch (error) {
       next(error);
@@ -803,7 +805,7 @@ class AnimalController {
   async deleteHealthRecord(req, res, next) {
     try {
       const { id } = req.params;
-      await animalService.deleteHealthRecord(parseInt(id));
+      await animalHealthService.deleteHealthRecord(parseInt(id));
       res.json({ success: true, message: 'Health record deleted successfully' });
     } catch (error) {
       next(error);
@@ -813,7 +815,7 @@ class AnimalController {
   async getHealthStatistics(req, res, next) {
     try {
       const filters = req.query;
-      const stats = await animalService.getHealthStatistics(filters);
+      const stats = await animalHealthService.getHealthStatistics(filters);
       res.json({ success: true, data: stats });
     } catch (error) {
       next(error);
@@ -823,7 +825,7 @@ class AnimalController {
   async getUpcomingFollowups(req, res, next) {
     try {
       const { days, limit } = req.query;
-      const followups = await animalService.getUpcomingFollowups(parseInt(days) || 30, parseInt(limit) || 10);
+      const followups = await animalHealthService.getUpcomingFollowups(parseInt(days) || 30, parseInt(limit) || 10);
       res.json({ success: true, data: followups });
     } catch (error) {
       next(error);
@@ -833,7 +835,7 @@ class AnimalController {
   async getOverdueFollowups(req, res, next) {
     try {
       const { limit } = req.query;
-      const followups = await animalService.getOverdueFollowups(parseInt(limit) || 10);
+      const followups = await animalHealthService.getOverdueFollowups(parseInt(limit) || 10);
       res.json({ success: true, data: followups });
     } catch (error) {
       next(error);
@@ -845,7 +847,7 @@ class AnimalController {
   async getAllDiseaseTreatments(req, res, next) {
     try {
       const filters = req.query;
-      const records = await animalService.getAllDiseaseTreatments(filters);
+      const records = await animalHealthService.getAllDiseaseTreatments(filters);
       res.json({ success: true, data: records });
     } catch (error) {
       next(error);
@@ -855,7 +857,7 @@ class AnimalController {
   async getDiseaseTreatmentById(req, res, next) {
     try {
       const { id } = req.params;
-      const record = await animalService.getDiseaseTreatmentById(parseInt(id));
+      const record = await animalHealthService.getDiseaseTreatmentById(parseInt(id));
       res.json({ success: true, data: record });
     } catch (error) {
       next(error);
@@ -865,7 +867,7 @@ class AnimalController {
   async getDiseaseTreatmentsByAnimal(req, res, next) {
     try {
       const { animalId } = req.params;
-      const records = await animalService.getDiseaseTreatmentsByAnimal(parseInt(animalId));
+      const records = await animalHealthService.getDiseaseTreatmentsByAnimal(parseInt(animalId));
       res.json({ success: true, data: records });
     } catch (error) {
       next(error);
@@ -875,7 +877,7 @@ class AnimalController {
   async getDiseaseTreatmentsByGroup(req, res, next) {
     try {
       const { groupId } = req.params;
-      const records = await animalService.getDiseaseTreatmentsByGroup(parseInt(groupId));
+      const records = await animalHealthService.getDiseaseTreatmentsByGroup(parseInt(groupId));
       res.json({ success: true, data: records });
     } catch (error) {
       next(error);
@@ -885,7 +887,7 @@ class AnimalController {
   async createDiseaseTreatment(req, res, next) {
     try {
       const data = { ...req.body, recorded_by: req.user.id };
-      const record = await animalService.createDiseaseTreatment(data);
+      const record = await animalHealthService.createDiseaseTreatment(data);
       res.status(201).json({ success: true, data: record });
     } catch (error) {
       next(error);
@@ -895,7 +897,7 @@ class AnimalController {
   async updateDiseaseTreatment(req, res, next) {
     try {
       const { id } = req.params;
-      const record = await animalService.updateDiseaseTreatment(parseInt(id), req.body);
+      const record = await animalHealthService.updateDiseaseTreatment(parseInt(id), req.body);
       res.json({ success: true, data: record });
     } catch (error) {
       next(error);
@@ -905,8 +907,27 @@ class AnimalController {
   async deleteDiseaseTreatment(req, res, next) {
     try {
       const { id } = req.params;
-      await animalService.deleteDiseaseTreatment(parseInt(id));
+      await animalHealthService.deleteDiseaseTreatment(parseInt(id), req.user.id);
       res.json({ success: true, message: 'Disease/treatment record deleted successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async addTreatmentDose(req, res, next) {
+    try {
+      const dose = await animalHealthService.addDose(parseInt(req.params.id), req.body, req.user.id);
+      res.status(201).json({ success: true, data: dose });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async deleteTreatmentDose(req, res, next) {
+    try {
+      const { id, doseId } = req.params;
+      await animalHealthService.deleteDose(parseInt(id), parseInt(doseId), req.user.id);
+      res.json({ success: true, message: 'Dose deleted successfully' });
     } catch (error) {
       next(error);
     }
@@ -915,7 +936,7 @@ class AnimalController {
   async getDiseaseStatistics(req, res, next) {
     try {
       const filters = req.query;
-      const stats = await animalService.getDiseaseStatistics(filters);
+      const stats = await animalHealthService.getDiseaseStatistics(filters);
       res.json({ success: true, data: stats });
     } catch (error) {
       next(error);
@@ -925,7 +946,7 @@ class AnimalController {
   async getDiseaseOccurrenceSummary(req, res, next) {
     try {
       const filters = req.query;
-      const summary = await animalService.getDiseaseOccurrenceSummary(filters);
+      const summary = await animalHealthService.getDiseaseOccurrenceSummary(filters);
       res.json({ success: true, data: summary });
     } catch (error) {
       next(error);
@@ -935,7 +956,7 @@ class AnimalController {
   async getOngoingTreatments(req, res, next) {
     try {
       const { limit } = req.query;
-      const treatments = await animalService.getOngoingTreatments(parseInt(limit) || 20);
+      const treatments = await animalHealthService.getOngoingTreatments(parseInt(limit) || 20);
       res.json({ success: true, data: treatments });
     } catch (error) {
       next(error);
@@ -945,7 +966,7 @@ class AnimalController {
   async getChronicConditions(req, res, next) {
     try {
       const { limit } = req.query;
-      const conditions = await animalService.getChronicConditions(parseInt(limit) || 20);
+      const conditions = await animalHealthService.getChronicConditions(parseInt(limit) || 20);
       res.json({ success: true, data: conditions });
     } catch (error) {
       next(error);
@@ -955,7 +976,7 @@ class AnimalController {
   async getCriticalCases(req, res, next) {
     try {
       const { limit } = req.query;
-      const cases = await animalService.getCriticalCases(parseInt(limit) || 10);
+      const cases = await animalHealthService.getCriticalCases(parseInt(limit) || 10);
       res.json({ success: true, data: cases });
     } catch (error) {
       next(error);
@@ -967,7 +988,7 @@ class AnimalController {
   async getAllFeedRecords(req, res, next) {
     try {
       const filters = req.query;
-      const records = await animalService.getAllFeedRecords(filters);
+      const records = await animalFeedService.getAllFeedRecords(filters);
       res.json({ success: true, data: records });
     } catch (error) {
       next(error);
@@ -977,7 +998,7 @@ class AnimalController {
   async getFeedRecordById(req, res, next) {
     try {
       const { id } = req.params;
-      const record = await animalService.getFeedRecordById(parseInt(id));
+      const record = await animalFeedService.getFeedRecordById(parseInt(id));
       res.json({ success: true, data: record });
     } catch (error) {
       next(error);
@@ -987,7 +1008,7 @@ class AnimalController {
   async getFeedRecordsByAnimal(req, res, next) {
     try {
       const { animalId } = req.params;
-      const records = await animalService.getFeedRecordsByAnimal(parseInt(animalId));
+      const records = await animalFeedService.getFeedRecordsByAnimal(parseInt(animalId));
       res.json({ success: true, data: records });
     } catch (error) {
       next(error);
@@ -997,7 +1018,7 @@ class AnimalController {
   async getFeedRecordsByGroup(req, res, next) {
     try {
       const { groupId } = req.params;
-      const records = await animalService.getFeedRecordsByGroup(parseInt(groupId));
+      const records = await animalFeedService.getFeedRecordsByGroup(parseInt(groupId));
       res.json({ success: true, data: records });
     } catch (error) {
       next(error);
@@ -1007,7 +1028,7 @@ class AnimalController {
   async createFeedRecord(req, res, next) {
     try {
       const data = { ...req.body, recorded_by: req.user.id };
-      const record = await animalService.createFeedRecord(data);
+      const record = await animalFeedService.createFeedRecord(data);
       res.status(201).json({ success: true, data: record });
     } catch (error) {
       next(error);
@@ -1017,7 +1038,7 @@ class AnimalController {
   async updateFeedRecord(req, res, next) {
     try {
       const { id } = req.params;
-      const record = await animalService.updateFeedRecord(parseInt(id), req.body);
+      const record = await animalFeedService.updateFeedRecord(parseInt(id), req.body, req.user.id);
       res.json({ success: true, data: record });
     } catch (error) {
       next(error);
@@ -1027,7 +1048,7 @@ class AnimalController {
   async deleteFeedRecord(req, res, next) {
     try {
       const { id } = req.params;
-      await animalService.deleteFeedRecord(parseInt(id));
+      await animalFeedService.deleteFeedRecord(parseInt(id), req.user.id);
       res.json({ success: true, message: 'Feed record deleted successfully' });
     } catch (error) {
       next(error);
@@ -1037,7 +1058,7 @@ class AnimalController {
   async getFeedStatistics(req, res, next) {
     try {
       const filters = req.query;
-      const stats = await animalService.getFeedStatistics(filters);
+      const stats = await animalFeedService.getFeedStatistics(filters);
       res.json({ success: true, data: stats });
     } catch (error) {
       next(error);
@@ -1047,7 +1068,7 @@ class AnimalController {
   async getConsumptionByFeedType(req, res, next) {
     try {
       const filters = req.query;
-      const summary = await animalService.getConsumptionByFeedType(filters);
+      const summary = await animalFeedService.getConsumptionByFeedType(filters);
       res.json({ success: true, data: summary });
     } catch (error) {
       next(error);
@@ -1057,7 +1078,7 @@ class AnimalController {
   async getDailyFeedConsumption(req, res, next) {
     try {
       const filters = req.query;
-      const consumption = await animalService.getDailyFeedConsumption(filters);
+      const consumption = await animalFeedService.getDailyFeedConsumption(filters);
       res.json({ success: true, data: consumption });
     } catch (error) {
       next(error);
@@ -1067,7 +1088,7 @@ class AnimalController {
   async getFeedCostByAnimalType(req, res, next) {
     try {
       const filters = req.query;
-      const costs = await animalService.getFeedCostByAnimalType(filters);
+      const costs = await animalFeedService.getFeedCostByAnimalType(filters);
       res.json({ success: true, data: costs });
     } catch (error) {
       next(error);
@@ -1077,7 +1098,7 @@ class AnimalController {
   async getAverageDailyFeedCost(req, res, next) {
     try {
       const { animal_id, group_id, days } = req.query;
-      const avgCost = await animalService.getAverageDailyFeedCost(
+      const avgCost = await animalFeedService.getAverageDailyFeedCost(
         animal_id ? parseInt(animal_id) : null,
         group_id ? parseInt(group_id) : null,
         parseInt(days) || 30
@@ -1226,7 +1247,7 @@ class AnimalController {
   async createAnimalSale(req, res, next) {
     try {
       const data = { ...req.body, recorded_by: req.user.id };
-      const sale = await animalService.createAnimalSale(data);
+      const sale = await animalService.createAnimalSale(data, req.user);
       res.status(201).json({ success: true, data: sale });
     } catch (error) {
       next(error);
@@ -1236,7 +1257,7 @@ class AnimalController {
   async updateAnimalSale(req, res, next) {
     try {
       const { id } = req.params;
-      const sale = await animalService.updateAnimalSale(parseInt(id), req.body);
+      const sale = await animalService.updateAnimalSale(parseInt(id), req.body, req.user);
       res.json({ success: true, data: sale });
     } catch (error) {
       next(error);

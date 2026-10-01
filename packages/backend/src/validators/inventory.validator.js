@@ -3,6 +3,37 @@ const { INVENTORY_TRANSACTION_TYPES } = require('../config/constants');
 
 const TRANSACTION_TYPES = Object.values(INVENTORY_TRANSACTION_TYPES);
 
+// Safety intervals, reorder quantity and default supplier, shared by create and update
+const itemSafetyFields = [
+  body('active_ingredient')
+    .optional({ values: 'null' })
+    .trim()
+    .isLength({ max: 255 }).withMessage('Active ingredient must be at most 255 characters'),
+  ...['pre_harvest_interval_days', 'milk_withdrawal_days', 'meat_withdrawal_days', 'egg_withdrawal_days'].map((field) =>
+    body(field)
+      .optional({ values: 'null' })
+      .isInt({ min: 0, max: 3650 }).withMessage(`${field} must be a whole number of days`)
+      .toInt()
+  ),
+  body('reorder_quantity')
+    .optional({ values: 'null' })
+    .isFloat({ min: 0 }).withMessage('Reorder quantity must be a non-negative number'),
+  body('default_supplier_id')
+    .optional({ values: 'null' })
+    .isInt().withMessage('Supplier ID must be an integer'),
+];
+
+// Where an outgoing movement comes from and in which unit it was measured
+const movementSourceFields = [
+  body('unit')
+    .optional({ values: 'falsy' })
+    .trim()
+    .isLength({ max: 50 }).withMessage('Unit must be at most 50 characters'),
+  body('inventory_batch_id')
+    .optional({ values: 'null' })
+    .isInt().withMessage('Batch ID must be an integer'),
+];
+
 /**
  * Validators for inventory management endpoints
  */
@@ -68,6 +99,7 @@ const inventoryValidators = {
     body('notes')
       .optional({ values: 'null' })
       .trim(),
+    ...itemSafetyFields,
   ],
 
   updateItem: [
@@ -105,6 +137,7 @@ const inventoryValidators = {
     body('notes')
       .optional({ values: 'null' })
       .trim(),
+    ...itemSafetyFields,
   ],
 
   // ==================== TRANSACTION VALIDATORS ====================
@@ -128,6 +161,7 @@ const inventoryValidators = {
     body('total_cost')
       .optional({ values: 'null' })
       .isFloat({ min: 0 }).withMessage('Total cost must be a non-negative number'),
+    ...movementSourceFields,
     body('reference_type')
       .optional({ values: 'null' })
       .isIn(['crop_batch', 'animal', 'animal_group', 'task', 'manual'])
@@ -148,6 +182,7 @@ const inventoryValidators = {
     body('quantity')
       .notEmpty().withMessage('Quantity is required')
       .isFloat({ gt: 0 }).withMessage('Quantity must be greater than zero'),
+    ...movementSourceFields,
     body('reference_type')
       .optional({ values: 'null' })
       .isIn(['crop_batch', 'animal', 'animal_group', 'task', 'manual'])
@@ -193,9 +228,18 @@ const inventoryValidators = {
     query('low_stock')
       .optional()
       .isBoolean().withMessage('low_stock must be a boolean'),
+    query('stock_status')
+      .optional()
+      .isIn(['low', 'out', 'ok']).withMessage('stock_status must be low, out or ok'),
     query('expiring_days')
       .optional()
       .isInt({ min: 1 }).withMessage('expiring_days must be a positive integer'),
+    query('sort')
+      .optional()
+      .matches(/^[a-z_]+$/).withMessage('sort must be a column name'),
+    query('order')
+      .optional()
+      .isIn(['asc', 'desc']).withMessage('order must be asc or desc'),
   ],
 
   transactionFilters: [
@@ -252,6 +296,18 @@ const inventoryValidators = {
     query('days')
       .optional()
       .isInt({ min: 1, max: 365 }).withMessage('Days must be between 1 and 365'),
+  ],
+
+  valuationReportFilters: [
+    query('category_id')
+      .optional()
+      .isInt().withMessage('Category ID must be an integer'),
+  ],
+
+  reorderReportFilters: [
+    query('usage_days')
+      .optional()
+      .isInt({ min: 7, max: 365 }).withMessage('usage_days must be between 7 and 365'),
   ],
 
   // ==================== UNIT OF MEASURE VALIDATORS ====================
@@ -351,6 +407,9 @@ const inventoryValidators = {
       .optional({ values: 'null' })
       .trim()
       .isLength({ max: 255 }).withMessage('Supplier must be at most 255 characters'),
+    body('supplier_id')
+      .optional({ values: 'null' })
+      .isInt().withMessage('Supplier ID must be an integer'),
     body('supplier_batch_number')
       .optional({ values: 'null' })
       .trim()
@@ -383,6 +442,9 @@ const inventoryValidators = {
       .optional({ values: 'null' })
       .trim()
       .isLength({ max: 255 }).withMessage('Supplier must be at most 255 characters'),
+    body('supplier_id')
+      .optional({ values: 'null' })
+      .isInt().withMessage('Supplier ID must be an integer'),
     body('supplier_batch_number')
       .optional({ values: 'null' })
       .trim()

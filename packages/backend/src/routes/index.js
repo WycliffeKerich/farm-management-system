@@ -4,6 +4,8 @@ const userRoutes = require('./user.routes');
 const cropRoutes = require('./crop.routes');
 const animalRoutes = require('./animal.routes');
 const inventoryRoutes = require('./inventory.routes');
+const supplierRoutes = require('./supplier.routes');
+const withdrawalRoutes = require('./withdrawal.routes');
 const { db } = require('../config/database');
 
 const router = express.Router();
@@ -42,6 +44,12 @@ router.use('/animals', animalRoutes);
 
 // Inventory management routes
 router.use('/inventory', inventoryRoutes);
+
+// Supplier routes
+router.use('/suppliers', supplierRoutes);
+
+// Withdrawal periods and pre-harvest intervals in force
+router.use('/withdrawals', withdrawalRoutes);
 
 // TODO: Add more route modules as they are implemented
 // router.use('/financial', financialRoutes);

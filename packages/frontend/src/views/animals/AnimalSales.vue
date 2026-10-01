@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { computed, ref, onMounted, watch } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import animalService from '@/services/animal.service';
 import Button from 'primevue/button';
@@ -13,9 +13,16 @@ import Select from 'primevue/select';
 import DatePicker from 'primevue/datepicker';
 import Tag from 'primevue/tag';
 import RadioButton from 'primevue/radiobutton';
-import { toApiDate } from '@/utils/dates';
+import { formatApiDate, fromApiDate, toApiDate } from '@/utils/dates';
+import { validationMessage } from '@/utils/forms';
+import { holdProducts } from '@/utils/withdrawals';
+import { useActiveHolds } from '@/composables/useActiveHolds';
+import { useWithdrawalGuard } from '@/composables/useWithdrawalGuard';
+import WithdrawalDialog from '@/components/withdrawals/WithdrawalDialog.vue';
 
 const toast = useToast();
+const holds = useActiveHolds();
+const withdrawalGuard = useWithdrawalGuard();
 
 // State
 const records = ref([]);
@@ -148,12 +155,21 @@ const openNewRecordDialog = () => {
     sourceType.value = 'individual';
     submitted.value = false;
     recordDialog.value = true;
+    holds.load();
 };
+
+// Today's meat withdrawal on the chosen animal or group: a sold animal may be slaughtered
+const sourceHold = computed(() => {
+    const id = recordForm.value.reference_id;
+    if (!id) return null;
+    const entries = sourceType.value === 'individual' ? holds.forAnimal(id) : holds.forGroup(id);
+    return entries.find((entry) => entry.product === 'meat') || null;
+});
 
 const editRecord = (record) => {
     recordForm.value = {
         id: record.id,
-        sale_date: new Date(record.sale_date),
+        sale_date: fromApiDate(record.sale_date),
         reference_type: record.reference_type,
         reference_id: record.reference_id,
         customer_name: record.customer_name || '',
@@ -170,6 +186,7 @@ const editRecord = (record) => {
     sourceType.value = record.reference_type === 'animal' ? 'individual' : 'group';
     submitted.value = false;
     recordDialog.value = true;
+    holds.load();
 };
 
 const calculateTotal = () => {
@@ -193,23 +210,20 @@ const saveRecord = async () => {
             sale_date: toApiDate(recordForm.value.sale_date)
         };
 
-        if (recordForm.value.id) {
-            await animalService.updateAnimalSale(recordForm.value.id, data);
-            toast.add({ severity: 'success', summary: 'Success', detail: 'Sale record updated', life: 3000 });
-        } else {
-            await animalService.createAnimalSale(data);
-            toast.add({ severity: 'success', summary: 'Success', detail: 'Sale recorded successfully', life: 3000 });
-        }
-
-        recordDialog.value = false;
-        await loadRecords();
-        await loadStatistics();
-        await loadAnimals(); // Reload to update available animals
+        const id = recordForm.value.id;
+        const submit = (override) => (id ? animalService.updateAnimalSale(id, { ...data, ...override }) : animalService.createAnimalSale({ ...data, ...override }));
+        await withdrawalGuard.attempt(submit, async () => {
+            toast.add({ severity: 'success', summary: 'Success', detail: id ? 'Sale record updated' : 'Sale recorded successfully', life: 3000 });
+            recordDialog.value = false;
+            await loadRecords();
+            await loadStatistics();
+            await loadAnimals(); // Reload to update available animals
+        });
     } catch (error) {
         toast.add({
             severity: 'error',
             summary: 'Error',
-            detail: error.response?.data?.message || 'Failed to save sale record',
+            detail: validationMessage(error, 'Failed to save sale record'),
             life: 3000
         });
     } finally {
@@ -492,6 +506,7 @@ onMounted(() => {
                     />
                     <small class="p-error" v-if="submitted && !recordForm.reference_id && sourceType === 'group'"> Group is required </small>
                 </div>
+                <small v-if="sourceHold" class="text-orange-600 dark:text-orange-400 -mt-2"> Meat withdrawal ({{ holdProducts(sourceHold) }}): safe to sell for slaughter from {{ formatApiDate(sourceHold.safe_from) }}. </small>
 
                 <div class="grid grid-cols-2 gap-4">
                     <div class="flex flex-col gap-2">
@@ -574,6 +589,8 @@ onMounted(() => {
                 <Button label="Delete" icon="pi pi-trash" severity="danger" :loading="deleting" @click="deleteRecord" />
             </template>
         </Dialog>
+
+        <WithdrawalDialog :guard="withdrawalGuard" />
     </div>
 </template>
 

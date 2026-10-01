@@ -285,7 +285,7 @@ class CropController {
 
   async recordHarvest(req, res, next) {
     try {
-      const harvest = await cropService.recordHarvest(req.params.batchId, req.body, req.user.id);
+      const harvest = await cropService.recordHarvest(req.params.batchId, req.body, req.user);
       res.status(201).json({ success: true, data: harvest });
     } catch (error) {
       next(error);
@@ -360,7 +360,7 @@ class CropController {
 
   async deleteInputApplication(req, res, next) {
     try {
-      await cropService.deleteInputApplication(req.params.id);
+      await cropService.deleteInputApplication(req.params.id, req.user.id);
       res.json({ success: true, message: 'Input application deleted successfully' });
     } catch (error) {
       next(error);

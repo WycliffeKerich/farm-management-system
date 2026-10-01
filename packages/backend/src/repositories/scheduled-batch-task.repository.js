@@ -199,9 +199,10 @@ class ScheduledBatchTaskRepository extends BaseRepository {
    * @param {number} id - Task ID
    * @param {number} userId - User completing the task
    * @param {string} notes - Completion notes
+   * @param {Object} [t] - Task/transaction
    * @returns {Promise<Object>}
    */
-  async markCompleted(id, userId, notes = null) {
+  async markCompleted(id, userId, notes = null, t) {
     const query = `
       UPDATE ${this.tableName}
       SET status = 'completed',
@@ -212,7 +213,7 @@ class ScheduledBatchTaskRepository extends BaseRepository {
       WHERE id = $1 AND deleted_at IS NULL
       RETURNING *
     `;
-    return await this.db.one(query, [id, userId, notes]);
+    return await this.conn(t).one(query, [id, userId, notes]);
   }
 
   /**
@@ -255,16 +256,17 @@ class ScheduledBatchTaskRepository extends BaseRepository {
    * Link task to input application
    * @param {number} id - Scheduled task ID
    * @param {number} inputApplicationId - Input application ID
+   * @param {Object} [t] - Task/transaction
    * @returns {Promise<Object>}
    */
-  async linkToInputApplication(id, inputApplicationId) {
+  async linkToInputApplication(id, inputApplicationId, t) {
     const query = `
       UPDATE ${this.tableName}
       SET input_application_id = $2, updated_at = CURRENT_TIMESTAMP
       WHERE id = $1 AND deleted_at IS NULL
       RETURNING *
     `;
-    return await this.db.one(query, [id, inputApplicationId]);
+    return await this.conn(t).one(query, [id, inputApplicationId]);
   }
 
   /**

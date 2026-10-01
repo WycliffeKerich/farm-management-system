@@ -81,6 +81,29 @@ class InventoryTransactionRepository extends BaseRepository {
   }
 
   /**
+   * What a record has taken from stock and not yet had back: per item and
+   * batch, removals less returns made against the same reference
+   * @param {string} referenceType - Reference type
+   * @param {number} referenceId - Reference ID
+   * @param {Object} [t] - Task/transaction
+   * @returns {Promise<Array>} { item_id, inventory_batch_id, quantity, unit_cost } with quantity > 0
+   */
+  async outstandingByReference(referenceType, referenceId, t) {
+    return this.conn(t).any(
+      `SELECT item_id, inventory_batch_id,
+              SUM(CASE WHEN transaction_type = 'return' THEN -quantity ELSE quantity END) AS quantity,
+              MAX(unit_cost) FILTER (WHERE transaction_type <> 'return') AS unit_cost
+         FROM inventory_transactions
+        WHERE reference_type = $1 AND reference_id = $2 AND deleted_at IS NULL
+          AND transaction_type IN ('usage', 'waste', 'transfer', 'return')
+        GROUP BY item_id, inventory_batch_id
+       HAVING SUM(CASE WHEN transaction_type = 'return' THEN -quantity ELSE quantity END) > 0
+        ORDER BY item_id, inventory_batch_id NULLS LAST`,
+      [referenceType, referenceId]
+    );
+  }
+
+  /**
    * Create a ledger row and return it with item and user names
    * @param {Object} data - Transaction data
    * @param {Object} [t] - Task/transaction

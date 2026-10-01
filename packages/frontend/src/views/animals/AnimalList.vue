@@ -4,11 +4,24 @@ import { useRouter } from 'vue-router';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
 import animalService from '@/services/animal.service';
-import { toApiDate } from '@/utils/dates';
+import { useAuthStore } from '@/stores/auth.store';
+import { formatApiDate, toApiDate } from '@/utils/dates';
+import { validationMessage } from '@/utils/forms';
+import { holdProducts } from '@/utils/withdrawals';
+import { useActiveHolds } from '@/composables/useActiveHolds';
+import { useWithdrawalGuard } from '@/composables/useWithdrawalGuard';
+import HoldBadges from '@/components/withdrawals/HoldBadges.vue';
+import WithdrawalDialog from '@/components/withdrawals/WithdrawalDialog.vue';
 
 const router = useRouter();
 const confirm = useConfirm();
 const toast = useToast();
+const authStore = useAuthStore();
+const holds = useActiveHolds();
+const withdrawalGuard = useWithdrawalGuard();
+
+// Recording a sale needs the owner or a manager (POST /animals/sales)
+const canSell = computed(() => authStore.hasRole(['owner', 'manager']));
 
 // State
 const loading = ref(false);
@@ -340,6 +353,23 @@ const openSaleDialog = (animal) => {
     saleDialog.value = true;
 };
 
+// Today's meat withdrawal on the animal being sold, if any
+const saleHold = computed(() => (selectedAnimal.value ? holds.forAnimal(selectedAnimal.value.id).find((entry) => entry.product === 'meat') || null : null));
+
+const onSaleSaved = () => {
+    toast.add({
+        severity: 'success',
+        summary: 'Success',
+        detail: 'Sale recorded successfully',
+        life: 3000
+    });
+
+    saleDialog.value = false;
+    loadAnimals();
+    loadStatistics();
+    holds.load();
+};
+
 const recordSale = async () => {
     saleSubmitted.value = true;
 
@@ -349,28 +379,24 @@ const recordSale = async () => {
 
     saving.value = true;
     try {
-        await animalService.recordAnimalSale(selectedAnimal.value.id, {
+        // A sale record keeps the price and buyer, and marks the animal sold
+        const data = {
+            reference_type: 'animal',
+            reference_id: selectedAnimal.value.id,
             sale_date: toApiDate(saleForm.value.sale_date),
-            sale_price: saleForm.value.sale_price,
-            buyer_name: saleForm.value.buyer_name,
-            notes: saleForm.value.notes
-        });
-
-        toast.add({
-            severity: 'success',
-            summary: 'Success',
-            detail: 'Sale recorded successfully',
-            life: 3000
-        });
-
-        saleDialog.value = false;
-        loadAnimals();
-        loadStatistics();
+            product_type: 'Live animal',
+            quantity: 1,
+            unit: 'head',
+            unit_price: saleForm.value.sale_price,
+            customer_name: saleForm.value.buyer_name || undefined,
+            notes: saleForm.value.notes || undefined
+        };
+        await withdrawalGuard.attempt((override) => animalService.createAnimalSale({ ...data, ...override }), onSaleSaved);
     } catch (error) {
         toast.add({
             severity: 'error',
             summary: 'Error',
-            detail: error.response?.data?.message || 'Failed to record sale',
+            detail: validationMessage(error, 'Failed to record sale'),
             life: 3000
         });
     } finally {
@@ -502,6 +528,7 @@ onMounted(() => {
     loadBreeds();
     loadHousing();
     loadBreedingRecords();
+    holds.load();
 });
 </script>
 
@@ -585,9 +612,12 @@ onMounted(() => {
 
             <Column field="tag_number" header="Tag #" sortable>
                 <template #body="{ data }">
-                    <router-link :to="{ name: 'animal-detail', params: { id: data.id } }" class="text-primary font-medium hover:underline">
-                        {{ data.tag_number }}
-                    </router-link>
+                    <div class="flex flex-col items-start gap-1">
+                        <router-link :to="{ name: 'animal-detail', params: { id: data.id } }" class="text-primary font-medium hover:underline">
+                            {{ data.tag_number }}
+                        </router-link>
+                        <HoldBadges :entries="holds.forAnimal(data.id)" />
+                    </div>
                 </template>
             </Column>
 
@@ -628,7 +658,7 @@ onMounted(() => {
                     <div class="flex gap-2">
                         <Button icon="pi pi-eye" severity="info" text rounded @click="viewAnimal(data)" v-tooltip.top="'View'" />
                         <Button icon="pi pi-pencil" severity="secondary" text rounded @click="editAnimal(data)" v-tooltip.top="'Edit'" />
-                        <Button v-if="data.status === 'active'" icon="pi pi-dollar" severity="success" text rounded @click="openSaleDialog(data)" v-tooltip.top="'Record Sale'" />
+                        <Button v-if="canSell && data.status === 'active'" icon="pi pi-dollar" severity="success" text rounded @click="openSaleDialog(data)" v-tooltip.top="'Record Sale'" />
                         <Button v-if="data.status === 'active'" icon="pi pi-times" severity="danger" text rounded @click="openDeathDialog(data)" v-tooltip.top="'Record Death'" />
                         <Button icon="pi pi-trash" severity="danger" text rounded @click="confirmDelete(data)" v-tooltip.top="'Delete'" />
                     </div>
@@ -807,6 +837,7 @@ onMounted(() => {
                     <label for="sale_date" class="font-medium">Sale Date *</label>
                     <DatePicker id="sale_date" v-model="saleForm.sale_date" dateFormat="yy-mm-dd" class="w-full" :class="{ 'p-invalid': saleSubmitted && !saleForm.sale_date }" />
                     <small v-if="saleSubmitted && !saleForm.sale_date" class="text-red-500"> Sale date is required </small>
+                    <small v-else-if="saleHold" class="text-orange-600 dark:text-orange-400"> Meat withdrawal ({{ holdProducts(saleHold) }}): safe to sell for slaughter from {{ formatApiDate(saleHold.safe_from) }}. </small>
                 </div>
 
                 <div class="flex flex-col gap-2">
@@ -879,6 +910,8 @@ onMounted(() => {
         </Dialog>
 
         <!-- Delete Confirmation -->
+        <WithdrawalDialog :guard="withdrawalGuard" />
+
         <ConfirmDialog />
     </div>
 </template>

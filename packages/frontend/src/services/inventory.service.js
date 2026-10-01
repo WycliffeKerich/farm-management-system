@@ -74,10 +74,6 @@ const inventoryService = {
         return api.get('/inventory/transactions', { params });
     },
 
-    getItemTransactions(itemId, params = {}) {
-        return api.get(`/inventory/items/${itemId}/transactions`, { params });
-    },
-
     createTransaction(data) {
         return api.post('/inventory/transactions', data);
     },
@@ -93,6 +89,43 @@ const inventoryService = {
         return api.get(`/inventory/items/${itemId}/usage-report`, {
             params: { date_from: dateFrom, date_to: dateTo }
         });
+    },
+
+    /** Stock value by category and item, at batch cost where known */
+    getValuationReport(params = {}) {
+        return api.get('/inventory/reports/valuation', { params });
+    },
+
+    /** Items at or below minimum stock, with a suggested order and supplier */
+    getReorderReport(usageDays = 30) {
+        return api.get('/inventory/reports/reorder', { params: { usage_days: usageDays } });
+    },
+
+    /** Batches expired or expiring within `days`, with the value at risk */
+    getExpiringReport(days = 30) {
+        return api.get('/inventory/reports/expiring', { params: { days } });
+    },
+
+    // ==================== SUPPLIERS ====================
+
+    getSuppliers(params = {}) {
+        return api.get('/suppliers', { params });
+    },
+
+    getSupplier(id) {
+        return api.get(`/suppliers/${id}`);
+    },
+
+    createSupplier(data) {
+        return api.post('/suppliers', data);
+    },
+
+    updateSupplier(id, data) {
+        return api.put(`/suppliers/${id}`, data);
+    },
+
+    deleteSupplier(id) {
+        return api.delete(`/suppliers/${id}`);
     },
 
     // ==================== UNITS OF MEASURE ====================

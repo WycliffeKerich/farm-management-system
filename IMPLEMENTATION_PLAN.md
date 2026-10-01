@@ -29,7 +29,7 @@ A farm management system for a Kenyan smallholder farm covering:
 
 ## Current Status
 
-_As of 2026-09-29, on `develop` at commit `82ac4b0`._
+_As of 2026-09-29, on `develop` at commit `0be4476`._
 
 ### Delivered
 
@@ -38,11 +38,12 @@ _As of 2026-09-29, on `develop` at commit `82ac4b0`._
 | 1 | Foundation: monorepo, Express, pg-promise, JWT auth, Vue/PrimeVue shell | ✅ Merged |
 | 2 | Crop management: types/varieties/locations, batches, observations, harvests, inputs, pests, care plans | ✅ Merged |
 | 3 | Animal management: animals/groups, health, treatments, feed, breeding, production, incubation, deaths, care plans | ✅ Merged |
-| 4 | Inventory: categories, items, units of measure, batches (FEFO), transactions, frontend | 🟡 **Uncommitted work on `develop`**, not integrated with crops or animals |
+| 3.5 | Hardening & test harness: auth, repositories, errors, soft deletes, migration runner, Jest/Vitest, CI | ✅ Merged (PR #1) |
+| 4 | Inventory: categories, items, units of measure, batches (FEFO), transactions, frontend | 🟡 Ledger and UI merged (PR #2); not yet integrated with crops or animals |
 
 ### Review findings to fix before building further
 
-These are addressed in **Phase 3.5**.
+These were addressed in **Phase 3.5** (merged).
 
 | # | Severity | Finding | Location |
 |---|---|---|---|
@@ -294,8 +295,8 @@ Each phase has its own feature branch off `develop` and must meet the [Definitio
 ✅ 1 Foundation   ✅ 2 Crops   ✅ 3 Animals
    │
    ▼
-3.5 Hardening & Test Harness ───────────── (1.5 wk)  ◀ START HERE
-4   Inventory Completion & Integration ─── (1.5 wk)
+✅ 3.5 Hardening & Test Harness ───────── (1.5 wk)
+4   Inventory Completion & Integration ─── (1.5 wk)  ◀ IN PROGRESS
 5   Activity Model & Platform Foundations  (1.5 wk)
 6   Finance & Enterprise Costing ───────── (2 wk)
 7   Workforce: Tasks + Employees + Payroll (2.5 wk)
@@ -325,7 +326,7 @@ _Carried forward:_
 
 ---
 
-### Phase 3.5: Hardening & Test Harness (1.5 weeks) ◀ code complete; awaiting push, PR and required CI check
+### Phase 3.5: Hardening & Test Harness (1.5 weeks) ✅
 **Branch:** `feature/phase-3.5-hardening`
 
 **Goal:** make the existing code safe and correct, and put the test and CI safety net in place, before adding features.
@@ -400,49 +401,82 @@ Done on `feature/phase-4-inventory` (rebased onto `feature/phase-3.5-hardening`,
   - Backend: 132 Jest tests (22 for inventory), 77% line coverage overall.
   - Frontend: 46 Vitest tests.
 
-Open:
-- **Push and open the PRs:** the Phase 3.5 PR into `develop` first, then Phase 4 (needs `--force-with-lease`, since it was rebased).
-- **CI as a required check:** make CI required on `develop` in the GitHub branch protection settings after the first green run.
+Merged 2026-09-29: PR #1 (Phase 3.5) and PR #2 (Phase 4 part 1) into `develop`. `develop` is protected: a PR is required and the CI `test` check must pass on an up-to-date branch. No approving review is required, since there is a single maintainer.
 
-Follow-ups:
-- **`timestamptz` migration:** `TIMESTAMP` columns (`created_at`, `last_login`, `locked_until`, …) are serialised using Node's local timezone. Converting them to `timestamptz` removes the dependency on the server's timezone for displayed times. This is a small migration; schedule it early in Phase 4.
+Follow-ups (carried into Phase 4):
+- ~~**`timestamptz` migration:** `TIMESTAMP` columns (`created_at`, `last_login`, `locked_until`, …) are serialised using Node's local timezone.~~ Done in Phase 4 (migration 016): every `TIMESTAMP` column is now `TIMESTAMPTZ`, with existing values read in the server's zone. A migrator test fails if a zone-less timestamp column appears again.
 - **Frontend tests for views:** the coverage gate covers only the session and routing core. Extend `coverage.include` as views and stores get tests (start with the user management and inventory transaction forms).
-- **FEFO for every outgoing movement:** only "usage" on the item screen draws from batches. Waste, expiry and usage recorded elsewhere reduce item stock but not batch quantities, so batch totals can exceed item stock (the reconcile check reports this). Route all outgoing movements for batch-tracked items through FEFO in Phase 4.
+- ~~**FEFO for every outgoing movement:** only "usage" on the item screen draws from batches.~~ Done in PR #2: `drawStock` takes usage, waste, expiry, transfers and negative adjustments from batches earliest expiry first, then from unbatched stock.
 - **Display-side dates outside inventory:** some crop and animal views still display DATE strings with `new Date('YYYY-MM-DD')`, which shows the previous day west of UTC. This doesn't affect Nairobi. Switch them to `fromApiDate` when those views are next touched.
-- **Unpaged items endpoint:** `GET /inventory/items` without `page` ignores `low_stock` and `expiring_days`. The item list filters on the client for now. Make the endpoint honour the filters, or page the list, in Phase 4.
+- ~~**Unpaged items endpoint:** `GET /inventory/items` without `page` ignores `low_stock` and `expiring_days`.~~ Done in Phase 4: paged and unpaged lists share one filter builder, and `expiring_days` also matches live batches expiring in the window (the item list can drop its client-side filtering).
 
 ---
 
 ### Phase 4: Inventory Completion & Integration (1.5 weeks)
-**Branch:** `feature/phase-4-inventory`, rebased on the hardened `develop`.
+**Branch:** `feature/phase-4-integration` (part 1 merged from `feature/phase-4-inventory` as PR #2).
 
 **Goal:** make inventory the single source for everything the farm consumes, and make safety intervals enforceable.
 
 **Backend:**
-1. Rebase the WIP. Bring the inventory repositories and service onto the Phase 3.5 patterns (tx, whitelists, typed errors, parsed numerics).
-2. `suppliers` CRUD. Purchases record supplier, unit cost, batch number and expiry.
-3. **Integration**, each inside one transaction:
-   - **Crop input application** → FEFO usage transaction → cost captured on the application → `safe_harvest_date` recalculated on the batch.
-   - **Feed record** → FEFO usage → cost captured. A group feeding creates one transaction.
-   - **Treatment medications** → usage per medication → withdrawal dates set on the animal or group.
+1. ~~Rebase the WIP. Bring the inventory repositories and service onto the Phase 3.5 patterns (tx, whitelists, typed errors, parsed numerics).~~ Done in PR #2.
+2. ~~`suppliers` CRUD. Purchases record supplier, unit cost, batch number and expiry.~~ Done.
+3. ~~**Integration**, each inside one transaction:~~ Done.
+   - **Crop input application** → FEFO usage transaction → cost captured on the application → `safe_harvest_date` snapshotted on the application.
+   - **Feed record** → FEFO usage → cost captured. A group feeding creates one transaction. Changing the quantity, unit or date returns the old draw and takes the new one.
+   - **Treatment doses** → usage per dose → withdrawal dates on each dose. The API field is `doses` (routes `POST /animals/diseases-treatments/:id/doses`, `DELETE …/doses/:doseId`), because `medications` is the existing free-text column.
    - Unit conversion via `units_of_measure`: record in the unit used and deduct in the base unit.
-4. **Withdrawal and PHI enforcement:**
-   - Harvest, milk and egg production recording is blocked while under withdrawal.
-   - The owner can override with a reason, and the override is audited (logged via the Phase 5 audit log; until then, stored on the record).
-   - `GET /withdrawals/active`.
-5. Stock valuation (batch cost), reorder report, expiring-soon report.
-6. Start splitting `animal.service.js`: extract `animal-feed.service.js` and `animal-health.service.js`, since both are touched here.
+   - Deleting a record returns its stock to the batches it came from (a `return` transaction).
+4. ~~**Withdrawal and PHI enforcement:**~~ Done.
+   - Harvest, milk, egg and meat production recording is blocked (409 `WITHDRAWAL_ACTIVE`, with `safe_from` and the doses behind it) while under withdrawal.
+   - Every animal sale is checked against the meat withdrawal period, since a sold animal may be slaughtered. The owner overrides for breeding stock.
+   - The owner can override with a reason; other roles get 403. The override is stored on the record (`withdrawal_override_reason`, `withdrawal_override_by`) until the Phase 5 audit log.
+   - `GET /withdrawals/active?date=`.
+   - Selling without a sale record (`POST /individuals/:id/sale`, `PATCH /individuals/:id/status` to `sold`, and `POST /groups/:id/removal` with `type: 'sale'`) is also refused inside a meat withdrawal period. These routes have nowhere to keep an override, so the owner overrides by recording the sale through `POST /animals/sales`.
+   - **Design:** nothing is stored on the animal, group or batch. Each dose or application keeps its own safe dates, and a product is held on a date while any record made on or before it has a safe date after it. Back-dated records and deletions stay correct without recalculation. A group is a counted flock: its holds come from the group's own treatments, and an animal's from its own.
+5. ~~Stock valuation (batch cost), reorder report, expiring-soon report.~~ Done: `GET /inventory/reports/valuation?category_id=`, `/reports/reorder?usage_days=`, `/reports/expiring?days=` (owner and manager).
+   - **Valuation:** stock in a batch is valued at that batch's unit cost; stock held outside any batch at the item's cost per unit. Stock with no cost is reported as uncosted, not guessed. Expired and quarantined batches count until written off. The dashboard summary's values now come from the same calculation.
+   - **Reorder:** items at or below a set minimum, with net usage (usage less returns) averaged over `usage_days` (default 30), days of cover, the default supplier, and a suggested quantity: the item's `reorder_quantity`, or else enough to reach twice the minimum.
+   - **Expiring:** batches holding stock that expire within `days` (default 30), and expired stock not yet written off, with the value at risk. Unbatched stock goes by the item's expiry date.
+6. ~~Start splitting `animal.service.js`: extract `animal-feed.service.js` and `animal-health.service.js`, since both are touched here.~~ Done (2,442 → 2,003 lines).
 
 **Frontend:**
-1. Product pickers (autocomplete over inventory items showing stock on hand and unit) in the input application, feed and treatment forms. Free text stays as a fallback option.
-2. Withdrawal/PHI badges on batch, animal and group detail pages; a warning dialog when recording a harvest or production during withdrawal.
-3. Supplier management; purchase form with batch and expiry; valuation and reorder views.
-4. Adopt `useLazyTable` for the inventory lists (server-side pagination).
+1. ~~Product pickers (autocomplete over inventory items showing stock on hand and unit) in the input application, feed and treatment forms. Free text stays as a fallback option.~~ Done: `components/inventory/ProductPicker.vue` (filterable by name and code; shows stock on hand and the PHI or withdrawal days) with `composables/useStockItems.js`.
+   - Input applications (list page and batch detail) and feed records send `inventory_item_id`; picking an item fills the name and unit (and the feed's cost per unit). A feed record's item cannot change on edit.
+   - Treatments have a doses section. A new treatment sends `doses`; when editing, each new dose is posted on its own and saved doses can be removed (owner and manager), which returns their stock. The free-text `medications` field stays for anything else.
+   - Save errors in these forms now show the API's validation message. The input application list no longer offers the `growth_regulator` and `other` types, which the table's CHECK constraint rejects.
+2. ~~Withdrawal/PHI badges on batch, animal and group detail pages; a warning dialog when recording a harvest or production during withdrawal.~~ Done. There are no animal or group detail pages yet, so the badges are on the animal and group list rows.
+   - `composables/useActiveHolds.js` reads `GET /withdrawals/active`. The batch page shows a pre-harvest interval banner. Animal and group rows show a badge per held product with its safe date. The harvest, production and sale forms warn when the chosen batch, animal or group is held.
+   - `composables/useWithdrawalGuard.js` with `components/withdrawals/WithdrawalDialog.vue` handles a 409 `WITHDRAWAL_ACTIVE` on every harvest, production record and sale form. The dialog lists the holds; the owner can give a reason and save anyway, and other roles are told when it can be recorded.
+   - The quick "Record Sale" dialogs on the animal and group lists now create a sale record (`POST /animals/sales`), and are shown to the owner and managers only. Before this, an animal's price and buyer were dropped. A group's sale was stored as a plain removal because the form sent `adjustment_type` rather than `type`.
+   - The `v-tooltip` directive is now registered, so the tooltips used across the list pages appear.
+3. ~~Supplier management; purchase form with batch and expiry; valuation and reorder views.~~ Done.
+   - `views/inventory/SupplierList.vue` (`/inventory/suppliers`): anyone can look suppliers up; owners and managers add, edit, deactivate and delete them. A supplier that items or batches use can only be deactivated.
+   - `components/inventory/PurchaseDialog.vue` receives stock as a batch (`POST /inventory/batches`): supplier, unit cost, received, manufacture and expiry dates, batch and supplier lot numbers. The supplier and cost default to the item's usual supplier and cost per unit. It replaces the old batch dialog. For owners and managers, "Add Stock" on the item list, item page and dashboard opens it; workers keep the plain purchase transaction.
+   - `components/inventory/ItemSupplyFields.vue` adds to both item forms the usual supplier (`default_supplier_id`, replacing the free-text supplier), the reorder quantity, the active ingredient, and the pre-harvest interval and milk, meat and egg withdrawal days. Before this, the safety intervals could only be set through the API.
+   - `views/inventory/InventoryReports.vue` (`/inventory/reports`, owner and manager) has three tabs:
+     - Valuation: by category and item, with CSV export.
+     - Reorder: one order per supplier, a copy-order text to send them, and receiving straight from the list.
+     - Expiring: expired and expiring stock, with the value at risk.
+   - The dashboard links to the reorder and expiring tabs.
+4. ~~Adopt `useLazyTable` for the inventory lists (server-side pagination).~~ Done.
+   - `composables/useLazyTable.js` drives a PrimeVue DataTable in lazy mode. It sends page, limit, `sort` and `order`, and the filters that are set. A filter change goes back to page 1 and reloads after 300 ms. A response to an older request is dropped, and a page emptied by a delete steps back one page.
+   - `GET /inventory/items` (paged) adds three things:
+     - A `stock_status` filter of `low`, `out` or `ok`. `low` is the reorder rule, so it includes items that have run out below their minimum.
+     - `sort`/`order` over a whitelist, with blanks last and name as the tie-break.
+     - `stock_counts`: counts at each stock level for the current search and category.
+   - The item list pages, sorts and filters on the server. Its cards show `stock_counts` and filter the list when clicked; the dashboard's low-stock link still opens it filtered.
+   - The item page's transaction history pages through `GET /inventory/transactions?item_id=`, newest first. The unused per-item transactions call is removed from the frontend service.
+   - These lists stay unpaged:
+     - An item's batches: few per item, and usage needs them all to show which are drawn first.
+     - The supplier list: a short lookup list that also feeds the supplier pickers.
+     - The dashboard's item picker.
 
-**Tests:**
-- Integration: application → stock decremented → cost stored → PHI set → harvest blocked → owner override allowed.
-- Rollback: a failed stock deduction leaves no application row.
-- Unit conversion.
+**Tests:** ~~Done.~~
+- ~~Integration: application → stock decremented → cost stored → PHI set → harvest blocked → owner override allowed.~~ `crop-inputs.test.js`, "a spray from stock, end to end".
+- ~~Rollback: a failed stock deduction leaves no application row.~~ `crop-inputs.test.js`, "records nothing when stock is short or the batch cannot be used".
+- ~~Unit conversion.~~ `crop-inputs.test.js` (grams drawn from kilogram stock) and `inventory.draw.test.js`.
+- Suites: `crop-inputs.test.js` (10), `animal-withdrawals.test.js` (14) and `inventory-reports.test.js` (9, including the item list's stock level filter, counts and sorting). Backend total 187 tests.
+- Frontend: `utils/withdrawals.test.js`, `composables/useWithdrawalGuard.test.js`, `composables/useLazyTable.test.js` and `utils/inventoryReports.test.js`, with the product picker and purchase helpers in `utils/inventory.test.js`. Frontend total 70 tests.
 
 **Deliverables:** every spray, feed and dose deducts stock and carries a cost; harvesting or selling produce under withdrawal is prevented.
 

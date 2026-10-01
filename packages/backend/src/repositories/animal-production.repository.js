@@ -31,8 +31,8 @@ class AnimalProductionRepository {
     return db.any(query, params);
   }
 
-  async findProductionTypeById(id) {
-    return db.oneOrNone('SELECT * FROM animal_production_types WHERE id = $1 AND deleted_at IS NULL', [id]);
+  async findProductionTypeById(id, t) {
+    return (t || db).oneOrNone('SELECT * FROM animal_production_types WHERE id = $1 AND deleted_at IS NULL', [id]);
   }
 
   async createProductionType(data) {
@@ -203,8 +203,8 @@ class AnimalProductionRepository {
     };
   }
 
-  async findProductionRecordById(id) {
-    return db.oneOrNone(
+  async findProductionRecordById(id, t) {
+    return (t || db).oneOrNone(
       `
       SELECT
         pr.*,
@@ -227,7 +227,7 @@ class AnimalProductionRepository {
     );
   }
 
-  async createProductionRecord(data) {
+  async createProductionRecord(data, t) {
     const columns = [
       'production_type_id',
       'animal_id',
@@ -238,6 +238,8 @@ class AnimalProductionRepository {
       'unit_price',
       'notes',
       'recorded_by',
+      'withdrawal_override_reason',
+      'withdrawal_override_by',
     ];
     const values = [];
     const placeholders = [];
@@ -264,7 +266,7 @@ class AnimalProductionRepository {
       }
     });
 
-    return db.one(
+    return (t || db).one(
       `INSERT INTO animal_production_records (${insertColumns.join(', ')})
        VALUES (${insertPlaceholders.join(', ')})
        RETURNING *`,
@@ -272,8 +274,17 @@ class AnimalProductionRepository {
     );
   }
 
-  async updateProductionRecord(id, data) {
-    const allowedFields = ['production_type_id', 'production_date', 'quantity', 'quality_grade', 'unit_price', 'notes'];
+  async updateProductionRecord(id, data, t) {
+    const allowedFields = [
+      'production_type_id',
+      'production_date',
+      'quantity',
+      'quality_grade',
+      'unit_price',
+      'notes',
+      'withdrawal_override_reason',
+      'withdrawal_override_by',
+    ];
     const updates = [];
     const values = [];
 
@@ -284,10 +295,10 @@ class AnimalProductionRepository {
       }
     });
 
-    if (updates.length === 0) return this.findProductionRecordById(id);
+    if (updates.length === 0) return this.findProductionRecordById(id, t);
 
     values.push(id);
-    return db.one(
+    return (t || db).one(
       `UPDATE animal_production_records SET ${updates.join(', ')} WHERE id = $${values.length} RETURNING *`,
       values
     );

@@ -3,6 +3,8 @@ const inventoryItemRepository = require('../repositories/inventory-item.reposito
 const inventoryTransactionRepository = require('../repositories/inventory-transaction.repository');
 const inventoryBatchRepository = require('../repositories/inventory-batch.repository');
 const unitOfMeasureRepository = require('../repositories/unit-of-measure.repository');
+const supplierRepository = require('../repositories/supplier.repository');
+const inventoryReportService = require('./inventory-report.service');
 const { db } = require('../config/database');
 const { NotFoundError, ValidationError, ConflictError } = require('../utils/errors');
 const { INVENTORY_TRANSACTION_TYPES, INVENTORY_OUTGOING_TYPES } = require('../config/constants');
@@ -25,6 +27,30 @@ function toQuantity(value) {
     throw new ValidationError('Quantity must be a number');
   }
   return fromHundredths(toHundredths(number));
+}
+
+/**
+ * Keep a record's supplier id and its free-text supplier name in step: an id
+ * fills in the name, a name that matches a supplier fills in the id, and
+ * clearing the name clears the id.
+ * @param {Object} data - Item or batch fields
+ * @param {string} idField - 'default_supplier_id' or 'supplier_id'
+ * @returns {Promise<Object>} data with both fields set
+ * @throws {NotFoundError} when the id names no supplier
+ */
+async function withSupplier(data, idField) {
+  if (data[idField]) {
+    const supplier = await supplierRepository.findById(data[idField]);
+    if (!supplier) {
+      throw new NotFoundError('Supplier not found');
+    }
+    return { ...data, supplier: supplier.name };
+  }
+  if (data[idField] === undefined && 'supplier' in data) {
+    const supplier = data.supplier && (await supplierRepository.findByName(data.supplier));
+    return supplier ? { ...data, [idField]: supplier.id, supplier: supplier.name } : { ...data, [idField]: null };
+  }
+  return data;
 }
 
 function insufficientStock(available, requested, unit) {
@@ -187,6 +213,7 @@ class InventoryService {
     if (openingStock < 0) {
       throw new ValidationError('Opening stock cannot be negative');
     }
+    data = await withSupplier(data, 'default_supplier_id');
 
     return db.tx(async (t) => {
       const prefix = InventoryService.CATEGORY_PREFIXES[category.name] || 'INV';
@@ -250,7 +277,7 @@ class InventoryService {
     // Stock only changes through the ledger, and codes are permanent
     const { current_stock: _stock, item_code: _code, ...changes } = data;
 
-    return await inventoryItemRepository.update(id, changes);
+    return await inventoryItemRepository.update(id, await withSupplier(changes, 'default_supplier_id'));
   }
 
   /**
@@ -271,10 +298,16 @@ class InventoryService {
    * @param {number} page - Page number
    * @param {number} limit - Records per page
    * @param {Object} filters - Filters
-   * @returns {Promise<Object>} Paginated results
+   * @param {Object} [sort] - { field, order }
+   * @returns {Promise<Object>} Paginated results, with stock_counts: how many of the
+   *   matching items are at each stock level, whatever the stock level filter
    */
-  async paginateItems(page, limit, filters) {
-    return await inventoryItemRepository.paginateWithFilters(page, limit, filters);
+  async paginateItems(page, limit, filters, sort) {
+    const [result, stockCounts] = await Promise.all([
+      inventoryItemRepository.paginateWithFilters(page, limit, filters, sort),
+      inventoryItemRepository.countByStockStatus(filters),
+    ]);
+    return { ...result, stock_counts: stockCounts };
   }
 
   // ==================== STOCK MANAGEMENT ====================
@@ -299,18 +332,22 @@ class InventoryService {
   // ==================== INVENTORY TRANSACTIONS ====================
 
   /**
-   * Record a stock movement: one ledger row plus the matching stock change,
+   * Record a stock movement: ledger rows plus the matching stock change,
    * atomically. The item row is locked first, so concurrent movements on the
    * same item run one after another and each sees the stock the previous left.
    *
    * `quantity` is a positive amount; the type decides the direction. An
-   * adjustment is signed (+ adds, - removes).
+   * adjustment is signed (+ adds, - removes). Removals go through drawStock,
+   * so they come out of batches first expiry first and may write several rows.
+   * Additions with an inventory_batch_id also add to that batch.
    *
-   * @param {Object} data - item_id, transaction_type, quantity, unit_cost?, total_cost?,
+   * @param {Object} data - item_id, transaction_type, quantity, unit?, unit_cost?, total_cost?,
    *   reference_type?, reference_id?, notes?, transaction_date?, inventory_batch_id?
    * @param {number} userId - User recording the movement
    * @param {Object} [t] - Outer transaction to join
-   * @returns {Promise<Object>} Created ledger row with item info
+   * @returns {Promise<Object>} The last ledger row with item info, with quantity,
+   *   total_cost and stock_before covering the whole movement, plus `transactions`
+   *   and `batch_deductions` for a removal
    * @throws {ConflictError} INSUFFICIENT_STOCK when stock would go negative (nothing is written)
    */
   async recordTransaction(data, userId, t) {
@@ -322,47 +359,333 @@ class InventoryService {
     const quantity = toQuantity(data.quantity);
     const isAdjustment = type === INVENTORY_TRANSACTION_TYPES.ADJUSTMENT;
     if (isAdjustment ? quantity === 0 : quantity <= 0) {
-      throw new ValidationError(isAdjustment ? 'Adjustment quantity cannot be zero' : 'Quantity must be greater than zero');
+      throw new ValidationError(
+        isAdjustment ? 'Adjustment quantity cannot be zero' : 'Quantity must be greater than zero'
+      );
     }
-    const change = INVENTORY_OUTGOING_TYPES.includes(type) ? -quantity : quantity;
+
+    if (INVENTORY_OUTGOING_TYPES.includes(type) || quantity < 0) {
+      const { item_id: itemId, quantity: _quantity, ...options } = data;
+      const result = await this.drawStock(itemId, Math.abs(quantity), options, userId, t);
+      const rows = result.transactions;
+      return {
+        ...rows[rows.length - 1],
+        quantity: isAdjustment ? -result.quantity : result.quantity,
+        total_cost: result.total_cost,
+        stock_before: rows[0].stock_before,
+        transactions: rows,
+        batch_deductions: result.batch_deductions,
+      };
+    }
 
     return (t || db).tx(async (tx) => {
       const item = await inventoryItemRepository.findByIdForUpdate(data.item_id, tx);
       if (!item) {
         throw new NotFoundError('Item not found');
       }
+      const stockQuantity = await this.toItemUnit(item, quantity, data.unit, tx);
 
-      const stockBefore = item.current_stock;
-      const stockAfter = fromHundredths(toHundredths(stockBefore) + toHundredths(change));
-      if (stockAfter < 0) {
-        throw insufficientStock(stockBefore, Math.abs(change), item.unit);
+      if (data.inventory_batch_id) {
+        const batch = await inventoryBatchRepository.lockForItem(data.inventory_batch_id, item.id, tx);
+        if (!batch) {
+          throw new NotFoundError('Batch not found for this item');
+        }
+        await inventoryBatchRepository.setQuantity(
+          batch.id,
+          fromHundredths(toHundredths(batch.quantity) + toHundredths(stockQuantity)),
+          tx
+        );
       }
 
-      const unitCost = data.unit_cost ?? item.cost_per_unit ?? null;
-      const totalCost = data.total_cost ?? (unitCost === null ? null : fromHundredths(Math.round(unitCost * Math.abs(quantity) * 100)));
-
-      const transaction = await inventoryTransactionRepository.createWithItemInfo(
-        {
-          item_id: item.id,
-          inventory_batch_id: data.inventory_batch_id,
-          transaction_type: type,
-          quantity,
-          unit_cost: unitCost,
-          total_cost: totalCost,
-          reference_type: data.reference_type || null,
-          reference_id: data.reference_id || null,
-          notes: data.notes || null,
-          transaction_date: data.transaction_date,
-          created_by: userId,
-          stock_before: stockBefore,
-          stock_after: stockAfter,
-        },
-        tx
-      );
-      await inventoryItemRepository.setStock(item.id, stockAfter, tx);
-
-      return transaction;
+      return this.writeIncoming(item, stockQuantity, { ...data, transaction_type: type }, userId, tx);
     });
+  }
+
+  /**
+   * Write one ledger row that adds stock, and the new stock level. The caller
+   * has locked the item and already updated any batch.
+   * @private
+   */
+  async writeIncoming(item, quantity, data, userId, tx) {
+    const stockBefore = item.current_stock;
+    const stockAfter = fromHundredths(toHundredths(stockBefore) + toHundredths(quantity));
+    const unitCost = data.unit_cost ?? item.cost_per_unit ?? null;
+    const totalCost =
+      data.total_cost ?? (unitCost === null ? null : fromHundredths(Math.round(unitCost * toHundredths(quantity))));
+
+    const transaction = await inventoryTransactionRepository.createWithItemInfo(
+      {
+        item_id: item.id,
+        inventory_batch_id: data.inventory_batch_id || null,
+        transaction_type: data.transaction_type,
+        quantity,
+        unit_cost: unitCost,
+        total_cost: totalCost,
+        reference_type: data.reference_type || null,
+        reference_id: data.reference_id || null,
+        notes: data.notes || null,
+        transaction_date: data.transaction_date,
+        created_by: userId,
+        stock_before: stockBefore,
+        stock_after: stockAfter,
+      },
+      tx
+    );
+    await inventoryItemRepository.setStock(item.id, stockAfter, tx);
+
+    return transaction;
+  }
+
+  /**
+   * Take stock out of an item. Batches are a breakdown of current_stock; what
+   * no batch holds is "unbatched" stock. The sources, in order:
+   *   - a named inventory_batch_id: only that batch (usage and transfer refuse
+   *     a batch that is expired, quarantined or past its expiry date)
+   *   - an 'expired' movement: batches past their expiry date, then unbatched
+   *   - anything else: usable batches first expiry first, then unbatched
+   * Nothing is written unless the sources cover the whole quantity. One ledger
+   * row is written per source drawn from.
+   *
+   * @param {number} itemId - Item ID
+   * @param {number} quantity - Amount to take (> 0), in `options.unit` or the item's unit
+   * @param {Object} [options] - transaction_type (usage by default; any outgoing type or
+   *   adjustment), inventory_batch_id, unit, unit_cost, reference_type, reference_id,
+   *   notes, transaction_date
+   * @param {number} userId - User recording the movement
+   * @param {Object} [t] - Outer transaction to join
+   * @returns {Promise<Object>} { transactions, batch_deductions, unbatched_quantity,
+   *   quantity (in the item's unit), unit, total_cost (null when any cost is unknown), current_stock }
+   * @throws {ConflictError} INSUFFICIENT_STOCK, BATCH_NOT_USABLE (nothing is written)
+   */
+  async drawStock(itemId, quantity, options = {}, userId, t) {
+    const type = options.transaction_type || INVENTORY_TRANSACTION_TYPES.USAGE;
+    const isAdjustment = type === INVENTORY_TRANSACTION_TYPES.ADJUSTMENT;
+    if (!isAdjustment && !INVENTORY_OUTGOING_TYPES.includes(type)) {
+      throw new ValidationError(`A ${type} movement does not remove stock`);
+    }
+    const entered = toQuantity(quantity);
+    if (entered <= 0) {
+      throw new ValidationError('Quantity must be greater than zero');
+    }
+
+    return (t || db).tx(async (tx) => {
+      const item = await inventoryItemRepository.findByIdForUpdate(itemId, tx);
+      if (!item) {
+        throw new NotFoundError('Item not found');
+      }
+      const requested = await this.toItemUnit(item, entered, options.unit, tx);
+
+      const batches = await inventoryBatchRepository.lockStockedForItem(item.id, tx);
+      let stock = toHundredths(item.current_stock);
+      const inBatches = batches.reduce((sum, batch) => sum + toHundredths(batch.quantity), 0);
+      const unbatched = { id: null, quantity: fromHundredths(Math.max(0, stock - inBatches)) };
+
+      let sources;
+      if (options.inventory_batch_id) {
+        const batch =
+          batches.find((b) => b.id === Number(options.inventory_batch_id)) ||
+          (await inventoryBatchRepository.lockForItem(options.inventory_batch_id, item.id, tx));
+        if (!batch) {
+          throw new NotFoundError('Batch not found for this item');
+        }
+        if (!batch.usable && [INVENTORY_TRANSACTION_TYPES.USAGE, INVENTORY_TRANSACTION_TYPES.TRANSFER].includes(type)) {
+          const reason = batch.past_expiry ? 'is past its expiry date' : `is ${batch.status}`;
+          throw new ConflictError(`Batch ${batch.batch_number} ${reason} and cannot be used`, 'BATCH_NOT_USABLE', {
+            batch_id: batch.id,
+            status: batch.status,
+          });
+        }
+        sources = [batch];
+      } else if (type === INVENTORY_TRANSACTION_TYPES.EXPIRED) {
+        sources = [...batches.filter((b) => b.past_expiry || b.status === 'expired'), unbatched];
+      } else {
+        sources = [...batches.filter((b) => b.usable), unbatched];
+      }
+
+      let remaining = toHundredths(requested);
+      const available = Math.min(
+        sources.reduce((sum, source) => sum + toHundredths(source.quantity), 0),
+        stock
+      );
+      if (available < remaining) {
+        throw insufficientStock(fromHundredths(available), requested, item.unit);
+      }
+
+      const transactions = [];
+      const deductions = [];
+      let unbatchedTaken = 0;
+
+      for (const source of sources) {
+        if (remaining === 0) break;
+        const take = Math.min(toHundredths(source.quantity), remaining);
+        if (take === 0) continue;
+
+        if (source.id) {
+          const left = toHundredths(source.quantity) - take;
+          await inventoryBatchRepository.setQuantity(source.id, fromHundredths(left), tx);
+          deductions.push({
+            batch_id: source.id,
+            batch_number: source.batch_number,
+            quantity_deducted: fromHundredths(take),
+            remaining_in_batch: fromHundredths(left),
+          });
+        } else {
+          unbatchedTaken = take;
+        }
+
+        const unitCost = options.unit_cost ?? source.unit_cost ?? item.cost_per_unit ?? null;
+        transactions.push(
+          await inventoryTransactionRepository.createWithItemInfo(
+            {
+              item_id: item.id,
+              inventory_batch_id: source.id,
+              transaction_type: type,
+              quantity: fromHundredths(isAdjustment ? -take : take),
+              unit_cost: unitCost,
+              total_cost: unitCost === null ? null : fromHundredths(Math.round(unitCost * take)),
+              reference_type: options.reference_type || null,
+              reference_id: options.reference_id || null,
+              notes: options.notes || (source.id ? `From batch ${source.batch_number}` : null),
+              transaction_date: options.transaction_date,
+              created_by: userId,
+              stock_before: fromHundredths(stock),
+              stock_after: fromHundredths(stock - take),
+            },
+            tx
+          )
+        );
+
+        stock -= take;
+        remaining -= take;
+      }
+
+      await inventoryItemRepository.setStock(item.id, fromHundredths(stock), tx);
+
+      const costs = transactions.map((row) => row.total_cost);
+      return {
+        transactions,
+        batch_deductions: deductions,
+        unbatched_quantity: fromHundredths(unbatchedTaken),
+        quantity: requested,
+        unit: item.unit,
+        total_cost: costs.includes(null)
+          ? null
+          : fromHundredths(costs.reduce((sum, cost) => sum + toHundredths(cost), 0)),
+        current_stock: fromHundredths(stock),
+      };
+    });
+  }
+
+  /**
+   * Take stock for use (see drawStock)
+   * @param {number} itemId - Item ID
+   * @param {number} quantity - Quantity to use (> 0)
+   * @param {Object} [options] - unit, inventory_batch_id, reference_type, reference_id, notes, transaction_date
+   * @param {number} userId - User ID
+   * @param {Object} [t] - Outer transaction to join
+   * @returns {Promise<Object>} See drawStock
+   */
+  async useStock(itemId, quantity, options = {}, userId, t) {
+    return this.drawStock(
+      itemId,
+      quantity,
+      { ...options, transaction_type: INVENTORY_TRANSACTION_TYPES.USAGE },
+      userId,
+      t
+    );
+  }
+
+  /**
+   * Put back what a record took from stock, when the record is deleted. Each
+   * batch drawn from gets its share back (or unbatched stock does, if the
+   * batch has since been deleted). Running it twice returns nothing twice.
+   * @param {string} referenceType - INVENTORY_REFERENCE_TYPES value
+   * @param {number} referenceId - Record ID
+   * @param {number} userId - User recording the return
+   * @param {Object} [t] - Outer transaction to join
+   * @returns {Promise<Array>} The return ledger rows written
+   */
+  async reverseReference(referenceType, referenceId, userId, t) {
+    return (t || db).tx(async (tx) => {
+      const outstanding = await inventoryTransactionRepository.outstandingByReference(referenceType, referenceId, tx);
+      const returns = [];
+
+      for (const row of outstanding) {
+        const item = await inventoryItemRepository.findByIdForUpdate(row.item_id, tx);
+        const batch =
+          row.inventory_batch_id && (await inventoryBatchRepository.lockForItem(row.inventory_batch_id, item.id, tx));
+        if (batch) {
+          await inventoryBatchRepository.setQuantity(
+            batch.id,
+            fromHundredths(toHundredths(batch.quantity) + toHundredths(row.quantity)),
+            tx
+          );
+        }
+
+        returns.push(
+          await this.writeIncoming(
+            item,
+            row.quantity,
+            {
+              transaction_type: INVENTORY_TRANSACTION_TYPES.RETURN,
+              inventory_batch_id: batch ? batch.id : null,
+              unit_cost: row.unit_cost,
+              reference_type: referenceType,
+              reference_id: referenceId,
+              notes: batch ? `Returned to batch ${batch.batch_number}` : 'Returned: record deleted',
+            },
+            userId,
+            tx
+          )
+        );
+      }
+
+      return returns;
+    });
+  }
+
+  /**
+   * Express a quantity in an item's own unit. Units convert only within one
+   * family (kg ↔ g, L ↔ mL); anything else is refused rather than guessed.
+   * @param {Object} item - Item row
+   * @param {number} quantity - Quantity in `unit`
+   * @param {string} [unit] - Unit symbol or name; empty means the item's unit
+   * @param {Object} [t] - Task/transaction
+   * @returns {Promise<number>} Quantity in the item's unit, 2 decimals
+   * @throws {ValidationError} when the units do not convert, or the result rounds to zero
+   */
+  async toItemUnit(item, quantity, unit, t) {
+    const label = (value) => (value || '').trim().toLowerCase();
+    if (!label(unit) || label(unit) === label(item.unit)) {
+      return quantity;
+    }
+
+    const [from, to] = await Promise.all([
+      unitOfMeasureRepository.findByLabel(unit.trim(), t),
+      item.unit_of_measure_id
+        ? unitOfMeasureRepository.findById(item.unit_of_measure_id, t)
+        : item.unit
+          ? unitOfMeasureRepository.findByLabel(item.unit.trim(), t)
+          : null,
+    ]);
+    const factor = from && to ? unitOfMeasureRepository.factorBetween(from, to) : null;
+    if (factor === null) {
+      throw new ValidationError(`Cannot convert ${unit} to ${item.unit || 'the item unit'}`, {
+        code: 'UNIT_MISMATCH',
+        from: unit,
+        to: item.unit,
+      });
+    }
+
+    const converted = toQuantity(quantity * factor);
+    if (converted <= 0) {
+      throw new ValidationError(`${quantity} ${unit} is too small to record in ${item.unit}`, {
+        code: 'UNIT_MISMATCH',
+        from: unit,
+        to: item.unit,
+      });
+    }
+    return converted;
   }
 
   /**
@@ -435,20 +758,21 @@ class InventoryService {
    * @returns {Promise<Object>} Summary statistics
    */
   async getInventorySummary() {
-    const categories = await inventoryCategoryRepository.findAllWithItemCounts();
-    const lowStockItems = await inventoryItemRepository.findLowStock();
-    const expiringItems = await inventoryItemRepository.findExpiring(30);
-    const expiringBatches = await inventoryBatchRepository.findExpiring(30);
+    const [categories, lowStockItems, expiringItems, expiringBatches, valuation] = await Promise.all([
+      inventoryCategoryRepository.findAllWithItemCounts(),
+      inventoryItemRepository.findLowStock(),
+      inventoryItemRepository.findExpiring(30),
+      inventoryBatchRepository.findExpiring(30),
+      inventoryReportService.valuation(),
+    ]);
 
+    // Values are at batch cost, as in the valuation report
+    const categoryValues = new Map(valuation.categories.map((cat) => [cat.category_id, cat.value]));
     const totalItems = categories.reduce((sum, cat) => sum + parseInt(cat.item_count, 10), 0);
-    const totalValue = categories.reduce(
-      (sum, cat) => sum + parseFloat(cat.total_value || 0),
-      0
-    );
 
     return {
       total_items: totalItems,
-      total_value: totalValue,
+      total_value: valuation.total_value,
       low_stock_count: lowStockItems.length,
       expiring_count: expiringItems.length,
       expiring_batches_count: expiringBatches.length,
@@ -456,7 +780,7 @@ class InventoryService {
         id: cat.id,
         name: cat.name,
         item_count: parseInt(cat.item_count, 10),
-        total_value: parseFloat(cat.total_value || 0),
+        total_value: categoryValues.get(cat.id) || 0,
       })),
     };
   }
@@ -559,7 +883,7 @@ class InventoryService {
   async convertUnits(quantity, fromUnitId, toUnitId) {
     const result = await unitOfMeasureRepository.convertQuantity(quantity, fromUnitId, toUnitId);
     if (result === null) {
-      throw new ValidationError('Cannot convert between these units (different categories)');
+      throw new ValidationError('Cannot convert between these units (they do not share a base unit)');
     }
     return result;
   }
@@ -617,6 +941,7 @@ class InventoryService {
     if (quantity <= 0) {
       throw new ValidationError('Quantity must be greater than zero');
     }
+    data = await withSupplier(data, 'supplier_id');
 
     return db.tx(async (t) => {
       const item = await inventoryItemRepository.findByIdForUpdate(data.inventory_item_id, t);
@@ -626,13 +951,14 @@ class InventoryService {
 
       const batch = await inventoryBatchRepository.createWithQuantity({ ...data, quantity, created_by: userId }, t);
 
-      // The purchase row adds the batch's quantity to the item's stock
-      await this.recordTransaction(
+      // The purchase row adds the batch's quantity to the item's stock (the
+      // batch already holds it)
+      await this.writeIncoming(
+        item,
+        quantity,
         {
-          item_id: item.id,
           inventory_batch_id: batch.id,
           transaction_type: INVENTORY_TRANSACTION_TYPES.PURCHASE,
-          quantity,
           unit_cost: data.unit_cost,
           notes: `Batch ${batch.batch_number} received`,
           transaction_date: data.received_date,
@@ -660,7 +986,7 @@ class InventoryService {
     // Quantities only change through the ledger
     const { quantity: _quantity, initial_quantity: _initial, inventory_item_id: _item, ...changes } = data;
 
-    return await inventoryBatchRepository.update(id, changes);
+    return await inventoryBatchRepository.update(id, await withSupplier(changes, 'supplier_id'));
   }
 
   /**
@@ -725,91 +1051,6 @@ class InventoryService {
    */
   async paginateBatches(params) {
     return await inventoryBatchRepository.findWithFilters(params);
-  }
-
-  /**
-   * Use stock from batches, first expiry first out. Locks the item and its
-   * usable batches, checks the batches can cover the whole quantity BEFORE
-   * changing anything, then writes one usage ledger row per batch drawn from.
-   *
-   * @param {number} itemId - Item ID
-   * @param {number} quantity - Quantity to use (> 0)
-   * @param {Object} options - reference_type, reference_id, notes, transaction_date
-   * @param {number} userId - User ID
-   * @param {Object} [t] - Outer transaction to join
-   * @returns {Promise<Object>} { transactions, batch_deductions, current_stock }
-   * @throws {ConflictError} INSUFFICIENT_STOCK when the batches cannot cover it (nothing is written)
-   */
-  async useStockFromBatches(itemId, quantity, options = {}, userId, t) {
-    const requested = toQuantity(quantity);
-    if (requested <= 0) {
-      throw new ValidationError('Quantity must be greater than zero');
-    }
-
-    return (t || db).tx(async (tx) => {
-      const item = await inventoryItemRepository.findByIdForUpdate(itemId, tx);
-      if (!item) {
-        throw new NotFoundError('Item not found');
-      }
-
-      const batches = await inventoryBatchRepository.lockAvailableForItem(item.id, tx);
-      const available = batches.reduce((sum, batch) => sum + toHundredths(batch.quantity), 0);
-      let remaining = toHundredths(requested);
-      if (available < remaining) {
-        throw insufficientStock(fromHundredths(available), requested, item.unit);
-      }
-      if (toHundredths(item.current_stock) < remaining) {
-        // Batches claim more than the item holds: the data needs reconciling
-        throw insufficientStock(item.current_stock, requested, item.unit);
-      }
-
-      let stock = toHundredths(item.current_stock);
-      const transactions = [];
-      const deductions = [];
-
-      for (const batch of batches) {
-        if (remaining === 0) break;
-
-        const take = Math.min(toHundredths(batch.quantity), remaining);
-        const left = toHundredths(batch.quantity) - take;
-        await inventoryBatchRepository.setQuantity(batch.id, fromHundredths(left), tx);
-
-        const unitCost = batch.unit_cost ?? item.cost_per_unit ?? null;
-        transactions.push(
-          await inventoryTransactionRepository.createWithItemInfo(
-            {
-              item_id: item.id,
-              inventory_batch_id: batch.id,
-              transaction_type: INVENTORY_TRANSACTION_TYPES.USAGE,
-              quantity: fromHundredths(take),
-              unit_cost: unitCost,
-              total_cost: unitCost === null ? null : fromHundredths(Math.round(unitCost * take)),
-              reference_type: options.reference_type || null,
-              reference_id: options.reference_id || null,
-              notes: options.notes || `Used from batch ${batch.batch_number}`,
-              transaction_date: options.transaction_date,
-              created_by: userId,
-              stock_before: fromHundredths(stock),
-              stock_after: fromHundredths(stock - take),
-            },
-            tx
-          )
-        );
-        deductions.push({
-          batch_id: batch.id,
-          batch_number: batch.batch_number,
-          quantity_deducted: fromHundredths(take),
-          remaining_in_batch: fromHundredths(left),
-        });
-
-        stock -= take;
-        remaining -= take;
-      }
-
-      await inventoryItemRepository.setStock(item.id, fromHundredths(stock), tx);
-
-      return { transactions, batch_deductions: deductions, current_stock: fromHundredths(stock) };
-    });
   }
 
   // ==================== INTEGRITY ====================

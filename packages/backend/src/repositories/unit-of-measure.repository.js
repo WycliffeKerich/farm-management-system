@@ -80,12 +80,12 @@ class UnitOfMeasureRepository extends BaseRepository {
    */
   async findConvertibleUnits(unitId) {
     const query = `
-      WITH unit_category AS (
-        SELECT category, base_unit_id FROM ${this.tableName} WHERE id = $1
+      WITH unit_family AS (
+        SELECT COALESCE(base_unit_id, id) AS family FROM ${this.tableName} WHERE id = $1
       )
       SELECT uom.*
       FROM ${this.tableName} uom
-      WHERE uom.category = (SELECT category FROM unit_category)
+      WHERE COALESCE(uom.base_unit_id, uom.id) = (SELECT family FROM unit_family)
         AND uom.deleted_at IS NULL
         AND uom.is_active = true
         AND uom.id != $1
@@ -102,36 +102,52 @@ class UnitOfMeasureRepository extends BaseRepository {
    * @returns {Promise<number|null>} Converted quantity or null if not convertible
    */
   async convertQuantity(quantity, fromUnitId, toUnitId) {
-    if (fromUnitId === toUnitId) {
+    if (Number(fromUnitId) === Number(toUnitId)) {
       return quantity;
     }
 
-    const query = `
-      WITH from_unit AS (
-        SELECT id, category, base_unit_id, conversion_factor FROM ${this.tableName} WHERE id = $1
-      ),
-      to_unit AS (
-        SELECT id, category, base_unit_id, conversion_factor FROM ${this.tableName} WHERE id = $2
-      )
-      SELECT
-        fu.category as from_category,
-        tu.category as to_category,
-        fu.conversion_factor as from_factor,
-        tu.conversion_factor as to_factor,
-        fu.base_unit_id as from_base,
-        tu.base_unit_id as to_base
-      FROM from_unit fu, to_unit tu
-    `;
+    const units = await this.db.any(`SELECT * FROM ${this.tableName} WHERE id IN ($1, $2) AND deleted_at IS NULL`, [
+      fromUnitId,
+      toUnitId,
+    ]);
+    const from = units.find((unit) => unit.id === Number(fromUnitId));
+    const to = units.find((unit) => unit.id === Number(toUnitId));
+    const factor = from && to ? this.factorBetween(from, to) : null;
 
-    const result = await this.db.oneOrNone(query, [fromUnitId, toUnitId]);
+    return factor === null ? null : Math.round(quantity * factor * 1000000) / 1000000; // 6 decimal places
+  }
 
-    if (!result || result.from_category !== result.to_category) {
-      return null; // Cannot convert between different categories
+  /**
+   * Find a unit by its symbol or name, ignoring case (symbol wins)
+   * @param {string} label - e.g. 'kg', 'Kilogram'
+   * @param {Object} [t] - Task/transaction
+   * @returns {Promise<Object|null>} Unit or null
+   */
+  async findByLabel(label, t) {
+    return this.conn(t).oneOrNone(
+      `SELECT * FROM ${this.tableName}
+        WHERE deleted_at IS NULL AND (LOWER(symbol) = LOWER($1) OR LOWER(name) = LOWER($1))
+        ORDER BY (LOWER(symbol) = LOWER($1)) DESC
+        LIMIT 1`,
+      [label]
+    );
+  }
+
+  /**
+   * How many `to` units one `from` unit is. Units convert only within one
+   * family (the same base unit): kg ↔ g, but not bag ↔ piece, although both
+   * are counts.
+   * @param {Object} from - Unit row
+   * @param {Object} to - Unit row
+   * @returns {number|null} Factor, or null when they do not convert
+   */
+  factorBetween(from, to) {
+    const family = (unit) => unit.base_unit_id || unit.id;
+    if (family(from) !== family(to)) {
+      return null;
     }
-
-    // Convert: value * from_factor / to_factor
-    const converted = (quantity * result.from_factor) / result.to_factor;
-    return Math.round(converted * 1000000) / 1000000; // Round to 6 decimal places
+    const factor = (unit) => (unit.base_unit_id ? Number(unit.conversion_factor) : 1);
+    return factor(from) / factor(to);
   }
 
   /**

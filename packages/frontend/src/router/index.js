@@ -199,6 +199,18 @@ export const routes = [
                 component: () => import('@/views/inventory/ItemDetail.vue'),
                 meta: { breadcrumb: ['Inventory', 'Item Detail'] }
             },
+            {
+                path: '/inventory/suppliers',
+                name: 'inventory-suppliers',
+                component: () => import('@/views/inventory/SupplierList.vue'),
+                meta: { breadcrumb: ['Inventory', 'Suppliers'], menu: { section: 'inventory', label: 'Suppliers', icon: 'pi pi-fw pi-truck' } }
+            },
+            {
+                path: '/inventory/reports',
+                name: 'inventory-reports',
+                component: () => import('@/views/inventory/InventoryReports.vue'),
+                meta: { breadcrumb: ['Inventory', 'Reports'], menu: { section: 'inventory', label: 'Reports', icon: 'pi pi-fw pi-chart-bar' }, roles: ['owner', 'manager'] }
+            },
             // Administration
             {
                 path: '/users',

@@ -1,10 +1,16 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
+import { useToast } from 'primevue/usetoast';
 import cropService from '@/services/crop.service';
 import { toApiDate } from '@/utils/dates';
+import { validationMessage } from '@/utils/forms';
+import { useStockItems } from '@/composables/useStockItems';
+import ProductPicker from '@/components/inventory/ProductPicker.vue';
 
 const router = useRouter();
+const toast = useToast();
+const stock = useStockItems();
 
 // State
 const loading = ref(true);
@@ -32,6 +38,7 @@ const applicationForm = ref({
     batch_id: null,
     application_date: new Date(),
     input_type: 'fertilizer',
+    inventory_item_id: null,
     product_name: '',
     quantity: null,
     unit: 'kg',
@@ -47,9 +54,7 @@ const inputTypes = [
     { label: 'Fertilizer', value: 'fertilizer' },
     { label: 'Pesticide', value: 'pesticide' },
     { label: 'Herbicide', value: 'herbicide' },
-    { label: 'Fungicide', value: 'fungicide' },
-    { label: 'Growth Regulator', value: 'growth_regulator' },
-    { label: 'Other', value: 'other' }
+    { label: 'Fungicide', value: 'fungicide' }
 ];
 
 const units = ['kg', 'g', 'L', 'ml', 'units'];
@@ -136,6 +141,7 @@ const openAddDialog = () => {
         batch_id: null,
         application_date: new Date(),
         input_type: 'fertilizer',
+        inventory_item_id: null,
         product_name: '',
         quantity: null,
         unit: 'kg',
@@ -144,7 +150,21 @@ const openAddDialog = () => {
         notes: ''
     };
     showAddDialog.value = true;
+    stock.load();
 };
+
+// A stock item names the product and sets the unit; clearing it keeps the typed name
+const onProductPicked = (item) => {
+    if (!item) return;
+    applicationForm.value.product_name = item.name;
+    applicationForm.value.unit = item.unit;
+};
+
+// The picked item's unit may not be one of the usual ones
+const unitOptions = computed(() => {
+    const unit = applicationForm.value.unit;
+    return unit && !units.includes(unit) ? [...units, unit] : units;
+});
 
 // Save application
 const saveApplication = async () => {
@@ -160,10 +180,11 @@ const saveApplication = async () => {
         };
 
         await cropService.recordInputApplication(applicationForm.value.batch_id, payload);
+        toast.add({ severity: 'success', summary: 'Recorded', detail: payload.inventory_item_id ? 'Application recorded and stock drawn' : 'Application recorded', life: 3000 });
         showAddDialog.value = false;
         await loadData();
     } catch (error) {
-        console.error('Failed to save application:', error);
+        toast.add({ severity: 'error', summary: 'Error', detail: validationMessage(error, 'Failed to save application'), life: 5000 });
     } finally {
         saving.value = false;
     }
@@ -481,6 +502,10 @@ onMounted(() => {
                         <Select v-model="applicationForm.input_type" :options="inputTypes" optionLabel="label" optionValue="value" class="w-full" />
                     </div>
                     <div class="col-span-2">
+                        <label class="block text-sm font-medium mb-2" for="application_item">From Stock</label>
+                        <ProductPicker v-model="applicationForm.inventory_item_id" inputId="application_item" use="crop" :items="stock.items.value" :loading="stock.loading.value" @select="onProductPicked" />
+                    </div>
+                    <div class="col-span-2">
                         <label class="block text-sm font-medium mb-2">Product Name *</label>
                         <InputText v-model="applicationForm.product_name" class="w-full" placeholder="e.g., NPK 17-17-17" />
                     </div>
@@ -490,7 +515,7 @@ onMounted(() => {
                     </div>
                     <div>
                         <label class="block text-sm font-medium mb-2">Unit</label>
-                        <Select v-model="applicationForm.unit" :options="units" class="w-full" />
+                        <Select v-model="applicationForm.unit" :options="unitOptions" class="w-full" />
                     </div>
                     <div>
                         <label class="block text-sm font-medium mb-2">Application Method</label>

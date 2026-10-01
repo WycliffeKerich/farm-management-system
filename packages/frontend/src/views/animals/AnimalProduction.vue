@@ -3,10 +3,17 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
 import animalService from '@/services/animal.service';
-import { toApiDate } from '@/utils/dates';
+import { formatApiDate, fromApiDate, toApiDate } from '@/utils/dates';
+import { validationMessage } from '@/utils/forms';
+import { heldProductFor, holdProducts } from '@/utils/withdrawals';
+import { useActiveHolds } from '@/composables/useActiveHolds';
+import { useWithdrawalGuard } from '@/composables/useWithdrawalGuard';
+import WithdrawalDialog from '@/components/withdrawals/WithdrawalDialog.vue';
 
 const confirm = useConfirm();
 const toast = useToast();
+const holds = useActiveHolds();
+const withdrawalGuard = useWithdrawalGuard();
 
 // State
 const loading = ref(false);
@@ -194,7 +201,17 @@ const openNewRecordDialog = () => {
     sourceType.value = 'group';
     submitted.value = false;
     recordDialog.value = true;
+    holds.load();
 };
+
+// Today's withdrawal period on the chosen animal or group for this kind of produce
+const sourceHold = computed(() => {
+    const type = allProductionTypes.value.find((t) => t.id === recordForm.value.production_type_id);
+    const product = type && heldProductFor(type.category);
+    if (!product) return null;
+    const entries = sourceType.value === 'individual' ? holds.forAnimal(recordForm.value.animal_id) : holds.forGroup(recordForm.value.animal_group_id);
+    return entries.find((entry) => entry.product === product) || null;
+});
 
 const editRecord = (record) => {
     editingRecord.value = record;
@@ -202,7 +219,7 @@ const editRecord = (record) => {
         production_type_id: record.production_type_id,
         animal_id: record.animal_id,
         animal_group_id: record.animal_group_id,
-        production_date: record.production_date ? new Date(record.production_date) : null,
+        production_date: fromApiDate(record.production_date),
         quantity: parseFloat(record.quantity),
         quality_grade: record.quality_grade,
         unit_price: record.unit_price ? parseFloat(record.unit_price) : null,
@@ -211,6 +228,7 @@ const editRecord = (record) => {
     sourceType.value = record.animal_id ? 'individual' : 'group';
     submitted.value = false;
     recordDialog.value = true;
+    holds.load();
 };
 
 const closeRecordDialog = () => {
@@ -244,32 +262,24 @@ const saveRecord = async () => {
             data.animal_group_id = recordForm.value.animal_group_id;
         }
 
-        if (editingRecord.value) {
-            await animalService.updateProductionRecord(editingRecord.value.id, data);
+        const editingId = editingRecord.value?.id;
+        const submit = (override) => (editingId ? animalService.updateProductionRecord(editingId, { ...data, ...override }) : animalService.createProductionRecord({ ...data, ...override }));
+        await withdrawalGuard.attempt(submit, () => {
             toast.add({
                 severity: 'success',
                 summary: 'Success',
-                detail: 'Production record updated successfully',
+                detail: editingId ? 'Production record updated successfully' : 'Production record saved successfully',
                 life: 3000
             });
-        } else {
-            await animalService.createProductionRecord(data);
-            toast.add({
-                severity: 'success',
-                summary: 'Success',
-                detail: 'Production record saved successfully',
-                life: 3000
-            });
-        }
-
-        closeRecordDialog();
-        loadRecords();
-        loadStatistics();
+            closeRecordDialog();
+            loadRecords();
+            loadStatistics();
+        });
     } catch (error) {
         toast.add({
             severity: 'error',
             summary: 'Error',
-            detail: error.response?.data?.message || 'Failed to save record',
+            detail: validationMessage(error, 'Failed to save record'),
             life: 3000
         });
     } finally {
@@ -549,6 +559,7 @@ onMounted(() => {
                         :class="{ 'p-invalid': submitted && sourceType === 'group' && !recordForm.animal_group_id }"
                     />
                     <small v-if="submitted && !recordForm.animal_id && !recordForm.animal_group_id" class="text-red-500"> Please select a source </small>
+                    <small v-else-if="sourceHold" class="text-orange-600 dark:text-orange-400"> Withdrawal period ({{ holdProducts(sourceHold) }}): safe from {{ formatApiDate(sourceHold.safe_from) }}. </small>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -588,6 +599,8 @@ onMounted(() => {
                 <Button :label="editingRecord ? 'Update' : 'Save'" @click="saveRecord" :loading="saving" />
             </template>
         </Dialog>
+
+        <WithdrawalDialog :guard="withdrawalGuard" />
 
         <!-- Delete Confirmation -->
         <ConfirmDialog />

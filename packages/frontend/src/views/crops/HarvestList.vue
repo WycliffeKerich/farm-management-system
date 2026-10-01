@@ -1,12 +1,19 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
 import cropService from '@/services/crop.service';
-import { toApiDate } from '@/utils/dates';
+import { formatApiDate, toApiDate } from '@/utils/dates';
+import { validationMessage } from '@/utils/forms';
+import { holdProducts } from '@/utils/withdrawals';
+import { useActiveHolds } from '@/composables/useActiveHolds';
+import { useWithdrawalGuard } from '@/composables/useWithdrawalGuard';
+import WithdrawalDialog from '@/components/withdrawals/WithdrawalDialog.vue';
 
 const confirm = useConfirm();
 const toast = useToast();
+const holds = useActiveHolds();
+const withdrawalGuard = useWithdrawalGuard();
 
 // State
 const loading = ref(false);
@@ -128,6 +135,22 @@ const openNewHarvestDialog = () => {
     };
     submitted.value = false;
     harvestDialog.value = true;
+    holds.load();
+};
+
+// Today's pre-harvest interval on the chosen batch, if any
+const selectedBatchHold = computed(() => (harvestForm.value.batch_id ? holds.forBatch(harvestForm.value.batch_id) : null));
+
+const onHarvestSaved = () => {
+    toast.add({
+        severity: 'success',
+        summary: 'Success',
+        detail: 'Harvest recorded successfully',
+        life: 3000
+    });
+
+    closeHarvestDialog();
+    loadHarvests();
 };
 
 const closeHarvestDialog = () => {
@@ -152,22 +175,13 @@ const saveHarvest = async () => {
             notes: harvestForm.value.notes
         };
 
-        await cropService.recordHarvest(harvestForm.value.batch_id, data);
-
-        toast.add({
-            severity: 'success',
-            summary: 'Success',
-            detail: 'Harvest recorded successfully',
-            life: 3000
-        });
-
-        closeHarvestDialog();
-        loadHarvests();
+        const batchId = harvestForm.value.batch_id;
+        await withdrawalGuard.attempt((override) => cropService.recordHarvest(batchId, { ...data, ...override }), onHarvestSaved);
     } catch (error) {
         toast.add({
             severity: 'error',
             summary: 'Error',
-            detail: error.response?.data?.message || 'Failed to record harvest',
+            detail: validationMessage(error, 'Failed to record harvest'),
             life: 3000
         });
     } finally {
@@ -384,6 +398,7 @@ onMounted(() => {
                         :class="{ 'p-invalid': submitted && !harvestForm.batch_id }"
                     />
                     <small v-if="submitted && !harvestForm.batch_id" class="text-red-500"> Batch is required </small>
+                    <small v-else-if="selectedBatchHold" class="text-orange-600 dark:text-orange-400"> Pre-harvest interval ({{ holdProducts(selectedBatchHold) }}): safe from {{ formatApiDate(selectedBatchHold.safe_from) }}. </small>
                 </div>
 
                 <div class="flex flex-col gap-2">
@@ -480,6 +495,8 @@ onMounted(() => {
                 <Button label="Close" @click="viewDialog = false" />
             </template>
         </Dialog>
+
+        <WithdrawalDialog :guard="withdrawalGuard" />
 
         <!-- Delete Confirmation -->
         <ConfirmDialog />
