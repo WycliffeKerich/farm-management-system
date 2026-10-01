@@ -533,7 +533,11 @@ Follow-ups (carried into Phase 4):
    - **F20.** An animal or group can follow several care plans at once. Applying a plan no longer cancels the others; applying a plan it already follows is refused (409 `CARE_PLAN_ALREADY_ACTIVE`), so cancel that schedule to restart it. The schedule and its tasks are written in one transaction, and the response is the new schedule. `GET /animals/individuals/:id/care-schedule` and `GET /animals/groups/:id/care-schedule` now return a list of active schedules, oldest start first. No frontend view used them.
    - Crop batches keep one care plan at a time.
    - Tests: `production-records-migration.test.js`; a regression test in `animals.test.js`.
-9. **OpenAPI**: create `openapi.yaml` covering auth, users, inventory and activities; serve Swagger UI in dev; lint the spec in CI. From here on, every new endpoint must be in the spec.
+9. ~~**OpenAPI**: create `openapi.yaml` covering auth, users, inventory and activities; serve Swagger UI in dev; lint the spec in CI. From here on, every new endpoint must be in the spec.~~ Done:
+   - `packages/backend/openapi/openapi.yaml` (OpenAPI 3.1) covers health, auth, users, inventory, suppliers, withdrawals, activities, enterprises, the audit log, attachments and settings: 78 operations. It describes the bearer token, the `rt` refresh cookie, the response and error envelopes, and pagination. Users, activities, enterprises, audit entries, attachments and settings have full schemas. Inventory and supplier responses are generic records for now. Crops and animals follow in Phase 10.
+   - Swagger UI is at `/api/v1/docs` and the raw spec at `/api/v1/docs/openapi.json`, both outside production only.
+   - `npm run lint:openapi` (Redocly, recommended rules) runs in CI.
+   - `openapi.test.js` compares the spec with the Express routes both ways. A new route in a documented router, or a new router that is neither documented nor listed as pending, fails the suite.
 10. **Frontend:** a farm timeline view (filterable); a timeline tab on batch, animal and group detail; attachment upload component; settings page.
 
 **Deliverables:** every operational record appears on one timeline with labour and cost; the audit trail answers "who changed what"; photos and documents can be attached.

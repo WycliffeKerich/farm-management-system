@@ -21,7 +21,8 @@
     "test:ci": "npm run test:ci -w packages/backend && npm run test:coverage -w packages/frontend",
     "lint": "npm run lint:backend && npm run lint:frontend",
     "lint:backend": "npm run lint -w packages/backend",
-    "lint:frontend": "npm run lint -w packages/frontend"
+    "lint:frontend": "npm run lint -w packages/frontend",
+    "lint:openapi": "npm run lint:openapi -w packages/backend"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

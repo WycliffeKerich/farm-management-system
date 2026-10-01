@@ -1,0 +1,2156 @@
+openapi: 3.1.0
+info:
+  title: Farm Management System API
+  version: 1.0.0
+  description: |
+    The REST API behind the farm management web app.
+
+    Every response is JSON in an envelope: `{ success: true, data, message? }` on
+    success and `{ success: false, error: { code, message, details? } }` on failure.
+    Paged lists add `pagination: { page, limit, total, totalPages }` beside `data`.
+
+    Sign in with `POST /auth/login`. It returns a short-lived access token, sent as
+    `Authorization: Bearer <token>`, and sets the refresh token as an httpOnly
+    cookie (`rt`) that `POST /auth/refresh` exchanges for a new pair.
+
+    This spec covers health, auth, users, inventory, suppliers, withdrawals,
+    activities, enterprises, the audit log, attachments and settings. Crops and
+    animals are added in Phase 10; every new endpoint goes in here as it is built.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: /api/v1
+    description: This server
+security:
+  - bearerAuth: []
+tags:
+  - name: Health
+    description: Whether the API is up
+  - name: Auth
+    description: Sign-in, sessions, and the signed-in user's own account
+  - name: Users
+    description: Accounts, managed by the owner
+  - name: Inventory
+    description: Items, stock movements, units, batches and reports
+  - name: Suppliers
+    description: Where stock is bought from
+  - name: Withdrawals
+    description: Pre-harvest intervals and withdrawal periods in force
+  - name: Activities
+    description: The farm timeline and offline sync
+  - name: Enterprises
+    description: Lines of business costed on their own
+  - name: Audit log
+    description: Who changed what (owner only)
+  - name: Attachments
+    description: Photos and documents on records
+  - name: Settings
+    description: Farm-wide settings
+
+paths:
+  # ==================== HEALTH ====================
+  /health:
+    get:
+      tags: [Health]
+      operationId: getHealth
+      summary: Whether the API and its database are up
+      security: []
+      responses:
+        '200':
+          description: Up
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+        '503':
+          description: The database cannot be reached
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+
+  # ==================== AUTH ====================
+  /auth/bootstrap:
+    get:
+      tags: [Auth]
+      operationId: getBootstrapStatus
+      summary: Whether the first owner account still needs creating
+      security: []
+      responses:
+        '200':
+          description: Setup status
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [needsSetup]
+                        properties:
+                          needsSetup: { type: boolean }
+    post:
+      tags: [Auth]
+      operationId: bootstrapOwner
+      summary: Create the first owner account
+      description: Only while no users exist. Rate limited.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, first_name, last_name]
+              properties:
+                email: { type: string, format: email, maxLength: 255 }
+                password: { $ref: '#/components/schemas/NewPassword' }
+                first_name: { type: string, maxLength: 100 }
+                last_name: { type: string, maxLength: 100 }
+                phone: { type: [string, 'null'], maxLength: 20 }
+      responses:
+        '201':
+          description: Owner created; log in next
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Sign in
+      description: Returns an access token and sets the `rt` refresh cookie. Rate limited; repeated failures lock the account for a while.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, maxLength: 1024 }
+      responses:
+        '200': { $ref: '#/components/responses/Session' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401':
+          description: Wrong email or password, or the account is locked (`ACCOUNT_LOCKED`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refreshSession
+      summary: Exchange the refresh cookie for a new access token
+      description: The cookie is rotated on every use; presenting a used one revokes the whole session family.
+      security:
+        - refreshCookie: []
+      responses:
+        '200': { $ref: '#/components/responses/Session' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: End this session
+      security:
+        - refreshCookie: []
+        - {}
+      responses:
+        '200': { $ref: '#/components/responses/Message' }
+
+  /auth/logout-all:
+    post:
+      tags: [Auth]
+      operationId: logoutAll
+      summary: End every session of the signed-in user
+      responses:
+        '200': { $ref: '#/components/responses/Message' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      operationId: forgotPassword
+      summary: Email a password reset link
+      description: Always answers 200, whether or not the email has an account.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '200': { $ref: '#/components/responses/Message' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      operationId: resetPassword
+      summary: Set a new password with a reset token
+      description: Signs the user out everywhere and clears any lockout.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string, maxLength: 200 }
+                password: { $ref: '#/components/schemas/NewPassword' }
+      responses:
+        '200': { $ref: '#/components/responses/Message' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      operationId: getMe
+      summary: The signed-in user
+      responses:
+        '200':
+          description: The user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    put:
+      tags: [Auth]
+      operationId: updateMe
+      summary: Change the signed-in user's name or phone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                first_name: { type: string, maxLength: 100 }
+                last_name: { type: string, maxLength: 100 }
+                phone: { type: [string, 'null'], maxLength: 20 }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/change-password:
+    put:
+      tags: [Auth]
+      operationId: changePassword
+      summary: Change the signed-in user's password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword, confirmPassword]
+              properties:
+                currentPassword: { type: string }
+                newPassword: { $ref: '#/components/schemas/NewPassword' }
+                confirmPassword: { type: string, description: Must equal newPassword }
+      responses:
+        '200': { $ref: '#/components/responses/Message' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ==================== USERS ====================
+  /users:
+    get:
+      tags: [Users]
+      operationId: listUsers
+      summary: List users
+      description: Owner only. Active users first, then by name.
+      parameters:
+        - name: role
+          in: query
+          schema: { $ref: '#/components/schemas/Role' }
+        - name: is_active
+          in: query
+          schema: { type: boolean }
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: Users
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Users]
+      operationId: createUser
+      summary: Create a user
+      description: Owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, first_name, last_name, role]
+              properties:
+                email: { type: string, format: email, maxLength: 255 }
+                password: { $ref: '#/components/schemas/NewPassword' }
+                first_name: { type: string, maxLength: 100 }
+                last_name: { type: string, maxLength: 100 }
+                role: { $ref: '#/components/schemas/Role' }
+                phone: { type: [string, 'null'], maxLength: 20 }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /users/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Users]
+      operationId: getUser
+      summary: A user with their active sessions
+      description: Owner only.
+      responses:
+        '200':
+          description: The user
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/User'
+                          - type: object
+                            properties:
+                              locked_until: { type: [string, 'null'], format: date-time }
+                              sessions:
+                                type: array
+                                items: { $ref: '#/components/schemas/Record' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Users]
+      operationId: updateUser
+      summary: Change a user
+      description: Owner only. The last active owner cannot be demoted or deactivated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email, maxLength: 255 }
+                first_name: { type: string, maxLength: 100 }
+                last_name: { type: string, maxLength: 100 }
+                role: { $ref: '#/components/schemas/Role' }
+                is_active: { type: boolean }
+                phone: { type: [string, 'null'], maxLength: 20 }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /users/{id}/password:
+    put:
+      tags: [Users]
+      operationId: setUserPassword
+      summary: Set a user's password
+      description: Owner only. Signs the user out everywhere.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { $ref: '#/components/schemas/NewPassword' }
+      responses:
+        '200': { $ref: '#/components/responses/Message' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /users/{id}/sessions:
+    delete:
+      tags: [Users]
+      operationId: revokeUserSessions
+      summary: Sign a user out of every device
+      description: Owner only.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Sessions revoked
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          revoked: { type: integer, description: Number of sessions ended }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ==================== INVENTORY ====================
+  /inventory/summary:
+    get:
+      tags: [Inventory]
+      operationId: getInventorySummary
+      summary: Stock counts and value at a glance
+      responses:
+        '200': { $ref: '#/components/responses/RecordResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /inventory/low-stock:
+    get:
+      tags: [Inventory]
+      operationId: getLowStockItems
+      summary: Items at or below their minimum stock
+      responses:
+        '200': { $ref: '#/components/responses/RecordList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /inventory/expiring:
+    get:
+      tags: [Inventory]
+      operationId: getExpiringItems
+      summary: Items expiring within some days
+      parameters:
+        - $ref: '#/components/parameters/Days'
+      responses:
+        '200': { $ref: '#/components/responses/RecordList' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /inventory/reports/valuation:
+    get:
+      tags: [Inventory]
+      operationId: getValuationReport
+      summary: Stock value by item and category
+      description: Owners and managers.
+      parameters:
+        - name: category_id
+          in: query
+          schema: { type: integer }
+      responses:
+        '200': { $ref: '#/components/responses/RecordResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /inventory/reports/reorder:
+    get:
+      tags: [Inventory]
+      operationId: getReorderReport
+      summary: What to reorder, from recent usage
+      description: Owners and managers.
+      parameters:
+        - name: usage_days
+          in: query
+          description: Days of usage to average over
+          schema: { type: integer, minimum: 7, maximum: 365 }
+      responses:
+        '200': { $ref: '#/components/responses/RecordResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /inventory/reports/expiring:
+    get:
+      tags: [Inventory]
+      operationId: getExpiringReport
+      summary: Stock expiring soon, with its value
+      description: Owners and managers.
+      parameters:
+        - $ref: '#/components/parameters/Days'
+      responses:
+        '200': { $ref: '#/components/responses/RecordResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /inventory/categories:
+    get:
+      tags: [Inventory]
+      operationId: listInventoryCategories
+      summary: List inventory categories
+      responses:
+        '200': { $ref: '#/components/responses/RecordList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Inventory]
+      operationId: createInventoryCategory
+      summary: Create a category
+      description: Owners and managers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100 }
+                description: { type: [string, 'null'] }
+      responses:
+        '201': { $ref: '#/components/responses/RecordCreated' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /inventory/categories/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Inventory]
+      operationId: getInventoryCategory
+      summary: A category
+      responses:
+        '200': { $ref: '#/components/responses/RecordResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Inventory]
+      operationId: updateInventoryCategory
+      summary: Change a category
+      description: Owners and managers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 100 }
+                description: { type: [string, 'null'] }
+      responses:
+        '200': { $ref: '#/components/responses/RecordResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Inventory]
+      operationId: deleteInventoryCategory
+      summary: Delete a category
+      description: Owners and managers. Refused while items use it.
+      responses:
+        '200': { $ref: '#/components/responses/Message' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /inventory/items:
+    get:
+      tags: [Inventory]
+      operationId: listInventoryItems
+      summary: List items
+      description: Paged when `page` or `limit` is given; otherwise every matching item.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - name: category_id
+          in: query
+          schema: { type: integer }
+        - $ref: '#/components/parameters/Search'
+        - name: low_stock
+          in: query
+          schema: { type: boolean }
+        - name: stock_status
+          in: query
+          schema: { type: string, enum: [low, out, ok] }
+        - name: expiring_days
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: sort
+          in: query
+          description: Column to sort by
+          schema: { type: string, pattern: '^[a-z_]+$' }
+        - $ref: '#/components/parameters/Order'
+      responses:
+        '200':
+          description: Items, paged or not
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PagedRecords'
+                  - $ref: '#/components/schemas/RecordListEnvelope'
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Inventory]
+      operationId: createInventoryItem
+      summary: Create an item
+      description: Owners and managers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [name, category_id, unit]
+                  properties:
+                    current_stock: { type: number, minimum: 0 }
+                - $ref: '#/components/schemas/InventoryItemInput'
+      responses:
+        '201': { $ref: '#/components/responses/RecordCreated' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /inventory/items/code/{code}:
+    get:
+      tags: [Inventory]
+      operationId: getInventoryItemByCode
+      summary: An item by its item code
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/RecordResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /inventory/items/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Inventory]
+      operationId: getInventoryItem
+      summary: An item
+      responses:
+        '200': { $ref: '#/components/responses/RecordResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Inventory]
+      operationId: updateInventoryItem
+      summary: Change an item
+      description: Owners and managers. Stock changes go through transactions, not here.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InventoryItemInput' }
+      responses:
+        '200': { $ref: '#/components/responses/RecordResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Inventory]
+      operationId: deleteInventoryItem
+      summary: Delete an item
+      description: Owners and managers.
+      responses:
+        '200': { $ref: '#/components/responses/Message' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /inventory/items/{id}/transactions:
+    get:
+      tags: [Inventory]
+      operationId: listInventoryItemTransactions
+      summary: An item's stock movements
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: transaction_type
+          in: query
+          schema: { $ref: '#/components/schemas/TransactionType' }
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+      responses:
+        '200': { $ref: '#/components/responses/RecordList' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /inventory/items/{id}/usage-report:
+    get:
+      tags: [Inventory]
+      operationId: getInventoryItemUsageReport
+      summary: How much of an item was used between two dates
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: date_from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: date_to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200': { $ref: '#/components/responses/RecordResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /inventory/items/{id}/use:
+    post:
+      tags: [Inventory]
+      operationId: useInventoryStock
+      summary: Record stock used
+      description: Takes from the batch given, or first-expiring first.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [quantity]
+                  properties:
+                    quantity: { type: number, exclusiveMinimum: 0 }
+                - $ref: '#/components/schemas/MovementDetails'
+      responses:
+        '201': { $ref: '#/components/responses/RecordCreated' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /inventory/items/{id}/batches:
+    get:
+      tags: [Inventory]
+      operationId: listInventoryItemBatches
+      summary: An item's batches
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200': { $ref: '#/components/responses/RecordList' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /inventory/transactions:
+    get:
+      tags: [Inventory]
+      operationId: listInventoryTransactions
+      summary: Stock movements (paged)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - name: item_id
+          in: query
+          schema: { type: integer }
+        - name: transaction_type
+          in: query
+          schema: { $ref: '#/components/schemas/TransactionType' }
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - name: reference_type
+          in: query
+          schema: { $ref: '#/components/schemas/ReferenceType' }
+      responses:
+        '200': { $ref: '#/components/responses/PagedList' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Inventory]
+      operationId: createInventoryTransaction
+      summary: Record a stock movement
+      description: |
+        Quantities are magnitudes: purchases and returns add to stock, the other
+        types take from it, except `adjustment`, whose quantity is signed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [item_id, transaction_type, quantity]
+                  properties:
+                    item_id: { type: integer }
+                    transaction_type: { $ref: '#/components/schemas/TransactionType' }
+                    quantity: { type: number, description: Greater than zero unless an adjustment }
+                    unit_cost: { type: [number, 'null'], minimum: 0 }
+                    total_cost: { type: [number, 'null'], minimum: 0 }
+                - $ref: '#/components/schemas/MovementDetails'
+      responses:
+        '201': { $ref: '#/components/responses/RecordCreated' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /inventory/units:
+    get:
+      tags: [Inventory]
+      operationId: listUnits
+      summary: Units of measure
+      responses:
+        '200': { $ref: '#/components/responses/RecordList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Inventory]
+      operationId: createUnit
+      summary: Create a unit of measure
+      description: Owners and managers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [name, symbol, category]
+                - $ref: '#/components/schemas/UnitInput'
+      responses:
+        '201': { $ref: '#/components/responses/RecordCreated' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /inventory/units/categories:
+    get:
+      tags: [Inventory]
+      operationId: listUnitCategories
+      summary: The categories units fall in
+      responses:
+        '200': { $ref: '#/components/responses/RecordList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /inventory/units/convert:
+    post:
+      tags: [Inventory]
+      operationId: convertUnits
+      summary: Convert a quantity between two units
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity, from_unit_id, to_unit_id]
+              properties:
+                quantity: { type: number }
+                from_unit_id: { type: integer }
+                to_unit_id: { type: integer }
+      responses:
+        '200':
+          description: The converted quantity
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          converted_quantity: { type: number }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /inventory/units/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Inventory]
+      operationId: getUnit
+      summary: A unit of measure
+      responses:
+        '200': { $ref: '#/components/responses/RecordResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Inventory]
+      operationId: updateUnit
+      summary: Change a unit of measure
+      description: Owners and managers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/UnitInput'
+                - type: object
+                  properties:
+                    is_active: { type: boolean }
+      responses:
+        '200': { $ref: '#/components/responses/RecordResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Inventory]
+      operationId: deleteUnit
+      summary: Delete a unit of measure
+      description: Owners and managers.
+      responses:
+        '200': { $ref: '#/components/responses/Message' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /inventory/batches:
+    get:
+      tags: [Inventory]
+      operationId: listInventoryBatches
+      summary: Batches (paged)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - name: item_id
+          in: query
+          schema: { type: integer }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/BatchStatus' }
+        - name: expiring_within_days
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 365 }
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200': { $ref: '#/components/responses/PagedList' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Inventory]
+      operationId: createInventoryBatch
+      summary: Receive a batch
+      description: Owners and managers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [inventory_item_id, quantity]
+                  properties:
+                    inventory_item_id: { type: integer }
+                    quantity: { type: number, exclusiveMinimum: 0 }
+                    received_date: { type: [string, 'null'], format: date }
+                - $ref: '#/components/schemas/BatchDetails'
+      responses:
+        '201': { $ref: '#/components/responses/RecordCreated' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /inventory/batches/expiring:
+    get:
+      tags: [Inventory]
+      operationId: listExpiringBatches
+      summary: Batches expiring within some days
+      parameters:
+        - $ref: '#/components/parameters/Days'
+      responses:
+        '200': { $ref: '#/components/responses/RecordList' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /inventory/batches/expired:
+    get:
+      tags: [Inventory]
+      operationId: listExpiredBatches
+      summary: Batches past their expiry date with stock left
+      responses:
+        '200': { $ref: '#/components/responses/RecordList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /inventory/batches/mark-expired:
+    post:
+      tags: [Inventory]
+      operationId: markExpiredBatches
+      summary: Mark every batch past its expiry date as expired
+      description: Owners and managers.
+      responses:
+        '200':
+          description: How many were marked
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          marked_count: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /inventory/batches/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Inventory]
+      operationId: getInventoryBatch
+      summary: A batch
+      responses:
+        '200': { $ref: '#/components/responses/RecordResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Inventory]
+      operationId: updateInventoryBatch
+      summary: Change a batch
+      description: Owners and managers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/BatchDetails'
+                - type: object
+                  properties:
+                    status: { $ref: '#/components/schemas/BatchStatus' }
+      responses:
+        '200': { $ref: '#/components/responses/RecordResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Inventory]
+      operationId: deleteInventoryBatch
+      summary: Delete a batch
+      description: Owners and managers.
+      responses:
+        '200': { $ref: '#/components/responses/Message' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ==================== SUPPLIERS ====================
+  /suppliers:
+    get:
+      tags: [Suppliers]
+      operationId: listSuppliers
+      summary: List suppliers, with their item and batch counts
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - name: include_inactive
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200': { $ref: '#/components/responses/RecordList' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Suppliers]
+      operationId: createSupplier
+      summary: Create a supplier
+      description: Owners and managers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [name]
+                - $ref: '#/components/schemas/SupplierInput'
+      responses:
+        '201': { $ref: '#/components/responses/RecordCreated' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /suppliers/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Suppliers]
+      operationId: getSupplier
+      summary: A supplier
+      responses:
+        '200': { $ref: '#/components/responses/RecordResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Suppliers]
+      operationId: updateSupplier
+      summary: Change a supplier
+      description: Owners and managers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SupplierInput' }
+      responses:
+        '200': { $ref: '#/components/responses/RecordResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Suppliers]
+      operationId: deleteSupplier
+      summary: Delete a supplier
+      description: Owners and managers. Refused while items or batches refer to it.
+      responses:
+        '200': { $ref: '#/components/responses/Message' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ==================== WITHDRAWALS ====================
+  /withdrawals/active:
+    get:
+      tags: [Withdrawals]
+      operationId: getActiveWithdrawals
+      summary: What cannot be harvested or used on a date
+      description: |
+        Crop batches inside a pre-harvest interval, and animals or groups whose
+        milk, meat or eggs are inside a withdrawal period, each with its latest
+        safe-from date and the applications behind it.
+      parameters:
+        - name: date
+          in: query
+          description: Defaults to today
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Holds in force
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [date, crops, animals]
+                        properties:
+                          date: { type: string, format: date }
+                          crops:
+                            type: array
+                            items: { $ref: '#/components/schemas/Record' }
+                          animals:
+                            type: array
+                            items: { $ref: '#/components/schemas/Record' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ==================== ACTIVITIES ====================
+  /activities:
+    get:
+      tags: [Activities]
+      operationId: listActivities
+      summary: The farm timeline (paged)
+      description: Newest first by default. Each activity carries the detail row behind it, when it has one.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - name: sort
+          in: query
+          schema: { type: string, enum: [date, activity_type, title, status, created_at], default: date }
+        - $ref: '#/components/parameters/Order'
+        - name: enterprise_id
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: crop_batch_id
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: animal_id
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: animal_group_id
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: performed_by
+          in: query
+          description: Employee ID
+          schema: { type: integer, minimum: 1 }
+        - name: task_id
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/ActivityStatus' }
+        - name: activity_type
+          in: query
+          description: One type, or several as `activity_type=a&activity_type=b`
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/ActivityType' }
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - name: search
+          in: query
+          description: Matches the title and notes
+          schema: { type: string, maxLength: 100 }
+      responses:
+        '200':
+          description: A page of activities
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - $ref: '#/components/schemas/PaginationEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Activity' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /activities/bulk:
+    post:
+      tags: [Activities]
+      operationId: recordActivitiesBulk
+      summary: Record many activities at once (offline sync)
+      description: |
+        Each entry is saved on its own: one that fails does not stop the rest.
+        `client_request_id` makes a replay safe; an entry already saved comes back
+        as `duplicate` with its activity. `data` is the body the single-record
+        endpoint of that kind takes, and `batch_id` the crop batch for crop kinds.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entries]
+              properties:
+                entries:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    type: object
+                    required: [client_request_id, kind, data]
+                    properties:
+                      client_request_id:
+                        type: string
+                        format: uuid
+                        description: Unique within the request and across replays
+                      kind:
+                        type: string
+                        enum:
+                          [observation, harvest, input_application, pest_incident, feeding, health_record, treatment, production]
+                      batch_id: { type: [integer, 'null'], minimum: 1 }
+                      data: { type: object }
+      responses:
+        '200':
+          description: One result per entry, in order
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          required: [client_request_id, status]
+                          properties:
+                            client_request_id: { type: string, format: uuid }
+                            status: { type: string, enum: [created, duplicate, failed] }
+                            activity_id: { type: integer }
+                            record: { $ref: '#/components/schemas/Record' }
+                            error: { $ref: '#/components/schemas/ErrorBody' }
+                      summary:
+                        type: object
+                        properties:
+                          created: { type: integer }
+                          duplicate: { type: integer }
+                          failed: { type: integer }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /activities/{id}:
+    get:
+      tags: [Activities]
+      operationId: getActivity
+      summary: An activity with its detail row
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The activity
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Activity' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ==================== ENTERPRISES ====================
+  /enterprises:
+    get:
+      tags: [Enterprises]
+      operationId: listEnterprises
+      summary: List enterprises (paged)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - name: sort
+          in: query
+          schema: { type: string, enum: [name, enterprise_type, created_at] }
+        - $ref: '#/components/parameters/Order'
+        - name: enterprise_type
+          in: query
+          schema: { $ref: '#/components/schemas/EnterpriseType' }
+        - name: is_active
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: A page of enterprises
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - $ref: '#/components/schemas/PaginationEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Enterprise' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Enterprises]
+      operationId: createEnterprise
+      summary: Create an enterprise
+      description: Owners and managers. Names are unique, ignoring case.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [name, enterprise_type]
+                - $ref: '#/components/schemas/EnterpriseInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnterpriseResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /enterprises/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Enterprises]
+      operationId: getEnterprise
+      summary: An enterprise, with counts of what belongs to it
+      responses:
+        '200':
+          description: The enterprise
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Enterprise'
+                          - type: object
+                            properties:
+                              crop_batch_count: { type: integer }
+                              animal_count: { type: integer }
+                              animal_group_count: { type: integer }
+                              activity_count: { type: integer }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Enterprises]
+      operationId: updateEnterprise
+      summary: Change an enterprise
+      description: Owners and managers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EnterpriseInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnterpriseResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Enterprises]
+      operationId: deleteEnterprise
+      summary: Delete an enterprise
+      description: Owners and managers. Refused while anything refers to it.
+      responses:
+        '200': { $ref: '#/components/responses/Message' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ==================== AUDIT LOG ====================
+  /audit-log:
+    get:
+      tags: [Audit log]
+      operationId: listAuditLog
+      summary: Changes to business records (paged)
+      description: Owner only. Newest first unless `order=asc`.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Order'
+        - name: table
+          in: query
+          schema: { type: string, pattern: '^[a-z_]{1,63}$' }
+        - name: record_id
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: changed_by
+          in: query
+          description: User ID
+          schema: { type: integer, minimum: 1 }
+        - name: action
+          in: query
+          description: One action, or several as `action=a&action=b`
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { type: string, enum: [insert, update, delete, soft_delete] }
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+      responses:
+        '200':
+          description: A page of changes
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - $ref: '#/components/schemas/PaginationEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AuditEntry' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ==================== ATTACHMENTS ====================
+  /attachments:
+    get:
+      tags: [Attachments]
+      operationId: listAttachments
+      summary: A record's attachments, newest first (paged)
+      description: Finance records' attachments are for owners and managers.
+      parameters:
+        - name: entity_type
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/AttachmentEntityType' }
+        - name: entity_id
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1 }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of attachments
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - $ref: '#/components/schemas/PaginationEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Attachment' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Attachments]
+      operationId: uploadAttachment
+      summary: Attach a file to a record
+      description: |
+        JPEG, PNG, WebP or PDF, checked by content (anything else is a 400), up to
+        `UPLOAD_MAX_MB` (default 10).
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, entity_type, entity_id]
+              properties:
+                file:
+                  type: string
+                  contentMediaType: application/octet-stream
+                entity_type: { $ref: '#/components/schemas/AttachmentEntityType' }
+                entity_id: { type: integer, minimum: 1 }
+                caption: { type: string, maxLength: 1000 }
+      responses:
+        '201':
+          description: Uploaded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AttachmentResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413':
+          description: The file is too large (`FILE_TOO_LARGE`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /attachments/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Attachments]
+      operationId: downloadAttachment
+      summary: The file itself
+      description: Shown inline, or saved with `download=true`.
+      parameters:
+        - name: download
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: The file
+          content:
+            image/jpeg:
+              schema: { type: string, contentMediaType: image/jpeg }
+            image/png:
+              schema: { type: string, contentMediaType: image/png }
+            image/webp:
+              schema: { type: string, contentMediaType: image/webp }
+            application/pdf:
+              schema: { type: string, contentMediaType: application/pdf }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Attachments]
+      operationId: updateAttachment
+      summary: Change the caption
+      description: The uploader, owners and managers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                caption: { type: [string, 'null'], maxLength: 1000 }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AttachmentResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Attachments]
+      operationId: deleteAttachment
+      summary: Remove an attachment
+      description: The uploader, owners and managers.
+      responses:
+        '200': { $ref: '#/components/responses/Message' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ==================== SETTINGS ====================
+  /settings:
+    get:
+      tags: [Settings]
+      operationId: getSettings
+      summary: The farm's settings, with defaults for any not saved
+      responses:
+        '200': { $ref: '#/components/responses/SettingsResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    put:
+      tags: [Settings]
+      operationId: updateSettings
+      summary: Change some settings
+      description: Owner only. All or nothing; each bad value is named in `error.details`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              additionalProperties: false
+              properties:
+                farm_name: { type: string, minLength: 1, maxLength: 100 }
+                currency: { type: string, pattern: '^[A-Za-z]{3}$', description: ISO 4217 code }
+                timezone: { type: string, description: 'IANA time zone, e.g. Africa/Nairobi' }
+                farm_location: { $ref: '#/components/schemas/FarmLocation' }
+      responses:
+        '200': { $ref: '#/components/responses/SettingsResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: The access token from login or refresh
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: rt
+      description: httpOnly refresh token, scoped to /api/v1/auth
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Order:
+      name: order
+      in: query
+      schema: { type: string, enum: [asc, desc] }
+    Search:
+      name: search
+      in: query
+      schema: { type: string, maxLength: 100 }
+    DateFrom:
+      name: date_from
+      in: query
+      schema: { type: string, format: date }
+    DateTo:
+      name: date_to
+      in: query
+      schema: { type: string, format: date }
+    Days:
+      name: days
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 365 }
+
+  responses:
+    Message:
+      description: Done
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Success' }
+    Session:
+      description: Signed in; the `rt` cookie is set
+      headers:
+        Set-Cookie:
+          description: The rotated refresh token (`rt`, httpOnly, SameSite=Strict, path /api/v1/auth)
+          schema: { type: string }
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Success'
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    required: [user, accessToken]
+                    properties:
+                      user: { $ref: '#/components/schemas/User' }
+                      accessToken: { type: string }
+    RecordResponse:
+      description: The record
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/RecordEnvelope' }
+    RecordCreated:
+      description: Created
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/RecordEnvelope' }
+    RecordList:
+      description: The records
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/RecordListEnvelope' }
+    PagedList:
+      description: A page of records
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PagedRecords' }
+    SettingsResponse:
+      description: Every setting
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Success'
+              - type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Settings' }
+    ValidationFailed:
+      description: The request is invalid; `error.details` names each field
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Not signed in, or the token has expired
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Signed in, but this role may not do this
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: No such record
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Clashes with an existing record, or the record is in use
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TooManyRequests:
+      description: Rate limited; try again later
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Success:
+      type: object
+      required: [success]
+      properties:
+        success: { type: boolean, const: true }
+        message: { type: string }
+    ErrorBody:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: e.g. VALIDATION_ERROR, NOT_FOUND, DUPLICATE, IN_USE
+        message: { type: string }
+        details:
+          description: For validation errors, one `{ field, message }` per problem
+          oneOf:
+            - type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+            - type: object
+    Error:
+      type: object
+      required: [success, error]
+      properties:
+        success: { type: boolean, const: false }
+        error: { $ref: '#/components/schemas/ErrorBody' }
+    Pagination:
+      type: object
+      required: [page, limit, total, totalPages]
+      properties:
+        page: { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
+        totalPages: { type: integer }
+    PaginationEnvelope:
+      type: object
+      required: [pagination]
+      properties:
+        pagination: { $ref: '#/components/schemas/Pagination' }
+    Record:
+      type: object
+      description: A database row; its columns are not yet described here
+      additionalProperties: true
+    RecordEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/Record' }
+    RecordListEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/Record' }
+    PagedRecords:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - $ref: '#/components/schemas/PaginationEnvelope'
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/Record' }
+    Health:
+      type: object
+      properties:
+        success: { type: boolean }
+        message: { type: string }
+        database: { type: string, enum: [up, down] }
+        timestamp: { type: string, format: date-time }
+
+    Role:
+      type: string
+      enum: [owner, manager, worker]
+    NewPassword:
+      type: string
+      minLength: 10
+      maxLength: 72
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        email: { type: string, format: email }
+        first_name: { type: string }
+        last_name: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        phone: { type: [string, 'null'] }
+        is_active: { type: boolean }
+        last_login: { type: [string, 'null'], format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    UserResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/User' }
+
+    TransactionType:
+      type: string
+      enum: [purchase, usage, adjustment, return, expired, transfer, waste]
+    ReferenceType:
+      type: string
+      enum: [crop_batch, animal, animal_group, task, manual]
+    BatchStatus:
+      type: string
+      enum: [active, depleted, expired, quarantine, disposed]
+    InventoryItemInput:
+      type: object
+      properties:
+        name: { type: string, maxLength: 200 }
+        category_id: { type: integer }
+        unit: { type: string, maxLength: 50 }
+        minimum_stock: { type: [number, 'null'], minimum: 0 }
+        reorder_quantity: { type: [number, 'null'], minimum: 0 }
+        cost_per_unit: { type: [number, 'null'], minimum: 0 }
+        supplier: { type: [string, 'null'], maxLength: 200 }
+        default_supplier_id: { type: [integer, 'null'] }
+        location: { type: [string, 'null'], maxLength: 200 }
+        expiry_date: { type: [string, 'null'], format: date }
+        active_ingredient: { type: [string, 'null'], maxLength: 255 }
+        pre_harvest_interval_days: { $ref: '#/components/schemas/SafetyDays' }
+        milk_withdrawal_days: { $ref: '#/components/schemas/SafetyDays' }
+        meat_withdrawal_days: { $ref: '#/components/schemas/SafetyDays' }
+        egg_withdrawal_days: { $ref: '#/components/schemas/SafetyDays' }
+        notes: { type: [string, 'null'] }
+    SafetyDays:
+      type: [integer, 'null']
+      minimum: 0
+      maximum: 3650
+    MovementDetails:
+      type: object
+      properties:
+        unit:
+          type: string
+          maxLength: 50
+          description: The unit the quantity is in, if not the item's own
+        inventory_batch_id: { type: [integer, 'null'] }
+        reference_type: { $ref: '#/components/schemas/ReferenceType' }
+        reference_id: { type: [integer, 'null'] }
+        transaction_date: { type: [string, 'null'], format: date }
+        notes: { type: [string, 'null'] }
+    UnitInput:
+      type: object
+      properties:
+        name: { type: string, maxLength: 50 }
+        symbol: { type: string, maxLength: 20 }
+        category: { type: string, enum: [weight, volume, length, area, count, time, other] }
+        base_unit_id: { type: [integer, 'null'] }
+        conversion_factor: { type: [number, 'null'], minimum: 0 }
+        description: { type: [string, 'null'] }
+    BatchDetails:
+      type: object
+      properties:
+        batch_number: { type: [string, 'null'], maxLength: 100 }
+        unit_cost: { type: [number, 'null'], minimum: 0 }
+        manufacture_date: { type: [string, 'null'], format: date }
+        expiry_date: { type: [string, 'null'], format: date }
+        supplier: { type: [string, 'null'], maxLength: 255 }
+        supplier_id: { type: [integer, 'null'] }
+        supplier_batch_number: { type: [string, 'null'], maxLength: 100 }
+        storage_location: { type: [string, 'null'], maxLength: 200 }
+        notes: { type: [string, 'null'] }
+    SupplierInput:
+      type: object
+      properties:
+        name: { type: string, maxLength: 255 }
+        contact_person: { type: [string, 'null'], maxLength: 255 }
+        phone: { type: [string, 'null'], maxLength: 50 }
+        email: { type: [string, 'null'], format: email, maxLength: 255 }
+        kra_pin: { type: [string, 'null'], maxLength: 20 }
+        address: { type: [string, 'null'], maxLength: 1000 }
+        notes: { type: [string, 'null'], maxLength: 5000 }
+        is_active: { type: boolean }
+
+    ActivityType:
+      type: string
+      enum:
+        - input_application
+        - observation
+        - harvest
+        - pest_incident
+        - feeding
+        - vaccination
+        - deworming
+        - health_check
+        - treatment
+        - production
+        - task_work
+    ActivityStatus:
+      type: string
+      enum: [planned, done, cancelled]
+    Activity:
+      type: object
+      description: |
+        One thing done (or planned) on the farm. It has one subject at most, a
+        crop batch, an animal or a group; only task work may have none.
+      properties:
+        id: { type: integer }
+        activity_type: { $ref: '#/components/schemas/ActivityType' }
+        status: { $ref: '#/components/schemas/ActivityStatus' }
+        title: { type: string, maxLength: 255 }
+        planned_for: { type: [string, 'null'], format: date }
+        occurred_on: { type: [string, 'null'], format: date }
+        enterprise_id: { type: [integer, 'null'] }
+        location_id: { type: [integer, 'null'] }
+        crop_batch_id: { type: [integer, 'null'] }
+        animal_id: { type: [integer, 'null'] }
+        animal_group_id: { type: [integer, 'null'] }
+        performed_by: { type: [integer, 'null'], description: Employee ID }
+        recorded_by: { type: [integer, 'null'], description: User ID }
+        labour_hours: { type: [string, 'null'], description: Decimal as a string }
+        input_cost: { type: [string, 'null'], description: Decimal as a string }
+        other_cost: { type: [string, 'null'], description: Decimal as a string }
+        task_id: { type: [integer, 'null'] }
+        client_request_id: { type: [string, 'null'], format: uuid }
+        notes: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      additionalProperties: true
+
+    EnterpriseType:
+      type: string
+      enum: [crops, mushrooms, poultry, dairy, livestock, apiculture, aquaculture, other]
+    EnterpriseInput:
+      type: object
+      properties:
+        name: { type: string, maxLength: 100 }
+        enterprise_type: { $ref: '#/components/schemas/EnterpriseType' }
+        unit_of_output: { type: [string, 'null'], maxLength: 20, description: 'e.g. kg, egg, litre' }
+        description: { type: [string, 'null'], maxLength: 5000 }
+        is_active: { type: boolean }
+    Enterprise:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        enterprise_type: { $ref: '#/components/schemas/EnterpriseType' }
+        unit_of_output: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      additionalProperties: true
+    EnterpriseResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/Enterprise' }
+
+    AuditEntry:
+      type: object
+      properties:
+        id: { type: integer }
+        table_name: { type: string }
+        record_id: { type: [integer, 'null'] }
+        action: { type: string, enum: [insert, update, delete, soft_delete] }
+        changed_by: { type: [integer, 'null'], description: User ID }
+        changed_at: { type: string, format: date-time }
+        before: { type: [object, 'null'], description: The row before; secrets left out }
+        after: { type: [object, 'null'], description: The row after; secrets left out }
+      additionalProperties: true
+
+    AttachmentEntityType:
+      type: string
+      enum:
+        - activities
+        - animal_diseases_treatments
+        - animal_health_records
+        - crop_pests_diseases
+        - financial_transactions
+        - growth_observations
+        - inventory_transactions
+    Attachment:
+      type: object
+      properties:
+        id: { type: integer }
+        entity_type: { $ref: '#/components/schemas/AttachmentEntityType' }
+        entity_id: { type: integer }
+        file_name: { type: string }
+        mime_type: { type: string, enum: [image/jpeg, image/png, image/webp, application/pdf] }
+        size_bytes: { type: integer }
+        caption: { type: [string, 'null'] }
+        uploaded_by: { type: [integer, 'null'] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      additionalProperties: true
+    AttachmentResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/Attachment' }
+
+    FarmLocation:
+      type: [object, 'null']
+      required: [latitude, longitude]
+      properties:
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+    Settings:
+      type: object
+      required: [farm_name, currency, timezone, farm_location]
+      properties:
+        farm_name: { type: string }
+        currency: { type: string, description: 'ISO 4217 code, e.g. KES' }
+        timezone: { type: string, description: IANA time zone }
+        farm_location: { $ref: '#/components/schemas/FarmLocation' }

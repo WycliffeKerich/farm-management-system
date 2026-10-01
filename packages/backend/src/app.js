@@ -42,6 +42,11 @@ app.use(compression());
 // HTTP request logging
 app.use(morganMiddleware);
 
+// API docs (Swagger UI over openapi/openapi.yaml), outside production
+if (process.env.NODE_ENV !== 'production') {
+  app.use('/api/v1/docs', require('./routes/docs.routes'));
+}
+
 // API Routes
 app.use('/api/v1', routes);
 
