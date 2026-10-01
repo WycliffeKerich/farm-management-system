@@ -487,7 +487,7 @@ Follow-ups (carried into Phase 4):
 
 **Goal:** one timeline and one cost roll-up across modules, plus the cross-cutting platform pieces every later phase needs.
 
-1. **ADR-001: Unified activity model.** Write `docs/adr/001-activity-model.md` covering the decision above, its alternatives (a separate task-only model; pure polymorphic logs) and the consequences.
+1. ~~**ADR-001: Unified activity model.** Write `docs/adr/001-activity-model.md` covering the decision above, its alternatives (a separate task-only model; pure polymorphic logs) and the consequences.~~ Done: [docs/adr/001-activity-model.md](docs/adr/001-activity-model.md). It also fixes the rules the next items build on: a single writer (`ActivityService.record`), detail rows and activities edited and soft-deleted together, the most specific subject when a row names both animal and group, `recorded_by` (user) kept apart from `performed_by` (employee), and lifecycle and ledger events left out of scope. A third alternative, a UNION view, was also rejected.
 2. Migration: `activities` table; an `activity_id` column on the detail tables; a backfill script that creates activities for existing detail rows.
 3. `ActivityService.record(t, {...})`, called by every detail-writing service inside its transaction. `GET /activities` timeline. `POST /activities/bulk`, idempotent on `client_request_id`.
 4. **Enterprises**: CRUD, and link crop batches, animal groups and animals to an enterprise (default derived from type).
