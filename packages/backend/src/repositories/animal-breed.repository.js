@@ -71,7 +71,8 @@ class AnimalBreedRepository extends BaseRepository {
              at.name as animal_type_name,
              at.category as animal_type_category,
              at.tracking_mode,
-             at.production_types
+             at.production_types,
+             at.enterprise_id as animal_type_enterprise_id
       FROM ${this.tableName} ab
       JOIN animal_types at ON ab.animal_type_id = at.id
       WHERE ab.id = $1 AND ab.deleted_at IS NULL

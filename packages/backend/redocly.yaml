@@ -1,0 +1,12 @@
+apis:
+  farm:
+    root: openapi/openapi.yaml
+
+extends:
+  - recommended
+
+rules:
+  # Health, the bootstrap check and logout cannot fail with a 4XX
+  operation-4xx-response: off
+  # /inventory/items/code/{code} is matched before /inventory/items/{id}/..., as Express registers it first
+  no-ambiguous-paths: off

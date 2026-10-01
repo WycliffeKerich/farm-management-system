@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { daysUntil, fromApiDate, toApiDate } from '@/utils/dates';
+import { daysUntil, formatAge, fromApiDate, toApiDate } from '@/utils/dates';
 
 describe('fromApiDate', () => {
     it('reads a DATE string as local midnight, so it round-trips', () => {
@@ -36,5 +36,24 @@ describe('toApiDate', () => {
         expect(toApiDate(null)).toBeNull();
         expect(toApiDate('')).toBeNull();
         expect(toApiDate('not a date')).toBeNull();
+    });
+});
+
+describe('formatAge', () => {
+    const now = new Date(2026, 9, 1, 9, 0);
+
+    it('counts days, then months, then years and months', () => {
+        expect(formatAge('2026-10-01', now)).toBe('0 days');
+        expect(formatAge('2026-09-30', now)).toBe('1 day');
+        expect(formatAge('2026-08-15', now)).toBe('47 days');
+        expect(formatAge('2026-08-01', now)).toBe('2 months');
+        expect(formatAge('2025-10-02', now)).toBe('11 months');
+        expect(formatAge('2024-10-01', now)).toBe('2 years');
+        expect(formatAge('2023-07-01', now)).toBe('3 y 3 m');
+    });
+
+    it('is empty for a future or missing date', () => {
+        expect(formatAge('2026-10-02', now)).toBe('');
+        expect(formatAge(null, now)).toBe('');
     });
 });

@@ -19,8 +19,10 @@ import { holdProducts } from '@/utils/withdrawals';
 import { useActiveHolds } from '@/composables/useActiveHolds';
 import { useWithdrawalGuard } from '@/composables/useWithdrawalGuard';
 import WithdrawalDialog from '@/components/withdrawals/WithdrawalDialog.vue';
+import { useFormat } from '@/composables/useFormat';
 
 const toast = useToast();
+const { currency, locale, formatMoney } = useFormat();
 const holds = useActiveHolds();
 const withdrawalGuard = useWithdrawalGuard();
 
@@ -266,7 +268,7 @@ const formatDate = (date) => {
 };
 
 const formatCurrency = (value) => {
-    return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(value);
+    return formatMoney(value);
 };
 
 const formatNumber = (value) => {
@@ -556,13 +558,13 @@ onMounted(() => {
                 <div class="grid grid-cols-2 gap-4">
                     <div class="flex flex-col gap-2">
                         <label for="unit_price">Unit Price *</label>
-                        <InputNumber id="unit_price" v-model="recordForm.unit_price" mode="currency" currency="KES" locale="en-KE" placeholder="0.00" :class="{ 'p-invalid': submitted && !recordForm.unit_price }" @input="calculateTotal" />
+                        <InputNumber id="unit_price" v-model="recordForm.unit_price" mode="currency" :currency="currency" :locale="locale" placeholder="0.00" :class="{ 'p-invalid': submitted && !recordForm.unit_price }" @input="calculateTotal" />
                         <small class="p-error" v-if="submitted && !recordForm.unit_price">Unit price is required</small>
                     </div>
 
                     <div class="flex flex-col gap-2">
                         <label for="total_amount">Total Amount</label>
-                        <InputNumber id="total_amount" v-model="recordForm.total_amount" mode="currency" currency="KES" locale="en-KE" placeholder="0.00" :disabled="recordForm.quantity && recordForm.unit_price" />
+                        <InputNumber id="total_amount" v-model="recordForm.total_amount" mode="currency" :currency="currency" :locale="locale" placeholder="0.00" :disabled="recordForm.quantity && recordForm.unit_price" />
                     </div>
                 </div>
 

@@ -131,7 +131,7 @@ This is the farmOS "logs" pattern, adapted to our relational schema.
   - An edited, already-applied migration fails the run.
   - Migrations stay idempotent as a safety net.
 - The **inventory ledger (`inventory_transactions`) is the source of truth**. `inventory_items.current_stock` and `inventory_batches.quantity_remaining` are cached projections, maintained in the same transaction and protected by `CHECK (… >= 0)`.
-- An **audit log** is written by a Postgres trigger on business tables. The app sets `SET LOCAL app.user_id` inside each transaction so the trigger knows who acted.
+- An **audit log** is written by a Postgres trigger on business tables. The app sets `app.user_id` locally in each transaction (and in front of each query sent straight on the pool) so the trigger knows who acted.
 
 ---
 
@@ -149,7 +149,7 @@ Tables marked **(exists)** are already in migrations 001–011. **(new)** tables
 - `audit_log` **(new, 5)**: `table_name`, `record_id`, `action` (insert/update/delete/soft_delete), `changed_by`, `changed_at`, `before` jsonb, `after` jsonb.
 - `attachments` **(new, 5)**: `entity_type`, `entity_id`, `file_name`, `mime_type`, `size_bytes`, `storage_key`, `caption`, `uploaded_by`. Uses local-disk storage behind a `StorageAdapter` interface so it can move to S3-compatible storage later.
 - `farm_settings` **(new, 5)**: key → jsonb value with `effective_from`. Holds:
-  - currency (KES), timezone (Africa/Nairobi), farm location (lat/long for weather)
+  - farm name, currency (KES), timezone (Africa/Nairobi), farm location (lat/long for weather)
   - statutory payroll rates, notification defaults
 - `notifications` **(new, 9)** and `notification_preferences` **(new, 9)**.
 
@@ -162,7 +162,7 @@ Tables marked **(exists)** are already in migrations 001–011. **(new)** tables
   - Subject, with one set via a CHECK: `crop_batch_id`, `animal_id`, `animal_group_id`, `hive_id`, `mushroom_batch_id`
   - `performed_by` (employee_id), `labour_hours`, `input_cost`, `other_cost`, `task_id`, `client_request_id` (unique; used for offline idempotency), `notes`
 - Detail tables **(alter)** gain `activity_id` FK: `crop_input_applications`, `growth_observations`, `harvests`, `crop_pests_diseases`, `animal_feed_records`, `animal_health_records`, `animal_diseases_treatments`, `animal_production_records`, `hive_inspections`, `honey_harvests`, `mushroom_flushes`, `environment_logs`.
-- **Consolidation:** `production_records` (001) is dropped in favour of `animal_production_records` (006), migrating any rows first.
+- **Consolidation:** `production_records` (001) is dropped in favour of `animal_production_records` (006), migrating any rows first (migration 023).
 
 ### Crop Management
 - (exists) `crop_types`, `crop_varieties`, `growing_locations`, `crop_batches`, `growth_observations`, `harvests`, `crop_input_applications`, `crop_pests_diseases`, `crop_care_plans`, `crop_care_plan_tasks`, `batch_care_schedules`, `scheduled_batch_tasks`.
@@ -429,7 +429,7 @@ Follow-ups (carried into Phase 4):
 4. ~~**Withdrawal and PHI enforcement:**~~ Done.
    - Harvest, milk, egg and meat production recording is blocked (409 `WITHDRAWAL_ACTIVE`, with `safe_from` and the doses behind it) while under withdrawal.
    - Every animal sale is checked against the meat withdrawal period, since a sold animal may be slaughtered. The owner overrides for breeding stock.
-   - The owner can override with a reason; other roles get 403. The override is stored on the record (`withdrawal_override_reason`, `withdrawal_override_by`) until the Phase 5 audit log.
+   - The owner can override with a reason; other roles get 403. The override is stored on the record (`withdrawal_override_reason`, `withdrawal_override_by`), and since Phase 5 the audit log also keeps it with who made it.
    - `GET /withdrawals/active?date=`.
    - Selling without a sale record (`POST /individuals/:id/sale`, `PATCH /individuals/:id/status` to `sold`, and `POST /groups/:id/removal` with `type: 'sale'`) is also refused inside a meat withdrawal period. These routes have nowhere to keep an override, so the owner overrides by recording the sale through `POST /animals/sales`.
    - **Design:** nothing is stored on the animal, group or batch. Each dose or application keeps its own safe dates, and a product is held on a date while any record made on or before it has a safe date after it. Back-dated records and deletions stay correct without recalculation. A group is a counted flock: its holds come from the group's own treatments, and an animal's from its own.
@@ -487,16 +487,66 @@ Follow-ups (carried into Phase 4):
 
 **Goal:** one timeline and one cost roll-up across modules, plus the cross-cutting platform pieces every later phase needs.
 
-1. **ADR-001: Unified activity model.** Write `docs/adr/001-activity-model.md` covering the decision above, its alternatives (a separate task-only model; pure polymorphic logs) and the consequences.
-2. Migration: `activities` table; an `activity_id` column on the detail tables; a backfill script that creates activities for existing detail rows.
-3. `ActivityService.record(t, {...})`, called by every detail-writing service inside its transaction. `GET /activities` timeline. `POST /activities/bulk`, idempotent on `client_request_id`.
-4. **Enterprises**: CRUD, and link crop batches, animal groups and animals to an enterprise (default derived from type).
-5. **Audit log**: a trigger function attached to business tables; `SET LOCAL app.user_id` in the tx helper; owner-only viewer.
-6. **Attachments**: upload with a size and MIME whitelist; `StorageAdapter` (local disk); attach to pest incidents, treatments, receipts and inspections.
-7. **Settings**: `farm_settings` with typed accessors and a settings page (currency, timezone, farm coordinates).
-8. **Consolidation:** migrate `production_records` → `animal_production_records` and drop the former. Fix the care-plan behaviour so an animal can have multiple active plans (F20).
-9. **OpenAPI**: create `openapi.yaml` covering auth, users, inventory and activities; serve Swagger UI in dev; lint the spec in CI. From here on, every new endpoint must be in the spec.
-10. **Frontend:** a farm timeline view (filterable); a timeline tab on batch, animal and group detail; attachment upload component; settings page.
+1. ~~**ADR-001: Unified activity model.** Write `docs/adr/001-activity-model.md` covering the decision above, its alternatives (a separate task-only model; pure polymorphic logs) and the consequences.~~ Done: [docs/adr/001-activity-model.md](docs/adr/001-activity-model.md). It also fixes the rules the next items build on: a single writer (`ActivityService.record`), detail rows and activities edited and soft-deleted together, the most specific subject when a row names both animal and group, `recorded_by` (user) kept apart from `performed_by` (employee), and lifecycle and ledger events left out of scope. A third alternative, a UNION view, was also rejected.
+2. ~~Migration: `activities` table; an `activity_id` column on the detail tables; a backfill script that creates activities for existing detail rows.~~ Done in migration 017:
+   - The table has a subject CHECK, date CHECKs, a unique `client_request_id` (UUID) and a stored `title`. `occurred_on` is a DATE, as explained in the ADR.
+   - `activity_id` is a unique FK on the 8 existing detail tables.
+   - `backfill_activities()` is a SQL function that can be run again. It maps health record types to activity types and splits treatment costs into medicines (input) and fees (other).
+   - Nullable until item 3; migration 018 then re-runs the backfill, sets `NOT NULL` and drops the function.
+   - Tests: `activities-backfill.test.js`. The suite restores the 017 state while it runs, because the function still runs on any database that migrates through 017.
+3. ~~`ActivityService.record(t, {...})`, called by every detail-writing service inside its transaction. `GET /activities` timeline. `POST /activities/bulk`, idempotent on `client_request_id`.~~ Done:
+   - **Writes.** `ActivityService.createDetail` records the activity first, then inserts the detail row pointing at it (`createLinked`). `activity_id` is otherwise a protected column. `syncDetail` keeps the activity in step on edits, stock draws and dose changes; `removeDetail` soft-deletes it with its row. This covers the 8 create paths in the crop, feed, health and production services.
+   - **Migration 018.** `activity_id` is `NOT NULL` on all 8 tables, and `backfill_activities()` is dropped.
+   - **`GET /activities`:** paged; filters by subject, enterprise, performer, task, status, type (one or several), date range and title search; whitelisted sort; names of subject, location and people joined in. `GET /activities/:id` returns one activity.
+   - **`POST /activities/bulk`:** `{ entries: [{ client_request_id, kind, batch_id?, data }] }`, up to 100 entries.
+     - Each entry runs through its own endpoint's validators and service, in its own transaction, and comes back `created`, `duplicate` or `failed`.
+     - A replayed `client_request_id` returns the original activity. A failed entry records nothing and can be sent again.
+     - Kinds: `observation`, `harvest`, `input_application`, `pest_incident`, `feeding`, `health_record`, `treatment`, `production`.
+   - **Create functions** take an optional outer transaction, as `recordInputApplication` already did.
+   - Tests: `activities.test.js`.
+4. ~~**Enterprises**: CRUD, and link crop batches, animal groups and animals to an enterprise (default derived from type).~~ Done in migration 019:
+   - **Schema.** `category` became `enterprise_type`, a fixed list: crops, mushrooms, poultry, dairy, livestock, apiculture, aquaculture, other. Existing rows were mapped by name and old category (Egg Production → poultry, Milk → dairy, animals → livestock, beekeeping → apiculture). Also new: `unit_of_output` (kg, litre, egg…), `is_active NOT NULL`, and case-insensitive unique names among live rows.
+   - **Links.** `enterprise_id` on `crop_batches`, `animals` and `animal_groups`. `crop_types` and `animal_types` gain an `enterprise_id` too, which is the default for their new subjects. A new subject takes the enterprise it is given (or none, with `null`); otherwise it takes its type's, while that enterprise is active. Choosing an inactive or missing enterprise is refused.
+   - **Activities.** `ActivityService.record` copies the subject's enterprise. When a subject is put under an enterprise, its activities that have none take it. Activities already costed to an enterprise keep it.
+   - **API.** `GET/POST/PUT/DELETE /enterprises`. The list is paged, filters by `enterprise_type` and `is_active`, and sorts by name, type or created date. `GET /enterprises/:id` adds counts of batches, animals, groups and activities. Writes are for owners and managers. A delete is refused (`IN_USE`) while anything refers to the enterprise; deactivate it instead.
+   - **Seeds.** Seeded enterprises carry types and units, and seeded crop and animal types link to them. Batches, animals and groups with no enterprise take their type's, and their activities follow. Re-running `npm run seed` applies this to an existing database.
+   - Tests: `enterprises.test.js`.
+5. ~~**Audit log**: a trigger function attached to business tables; `SET LOCAL app.user_id` in the tx helper; owner-only viewer.~~ Done in migration 020:
+   - **Trigger.** `audit_row_change()` runs after every insert, update and delete on each business table. It stores the whole row before and after as jsonb. An update that sets `deleted_at` is logged as `soft_delete`. An update that changes nothing but `updated_at` is not logged. `audit_attach(table, ignored_columns)` attaches it; new tables in later migrations must call it. Not audited: `schema_migrations`, `audit_log`, `user_sessions` and `password_reset_tokens`. `users` is audited without `password_hash` and the login bookkeeping (`last_login`, `failed_login_count`, `locked_until`), so logins and password changes leave no row.
+   - **Who acted.** `authenticate` runs the rest of the request in an AsyncLocalStorage context holding the user (`runAsUser` in `config/database.js`). Every `db.tx` first runs `set_config('app.user_id', id, true)`. A query sent straight on the pool carries the same call in front of it, in the same round trip, so it applies to that statement only. Nothing outlives its transaction, so a pooled connection cannot carry one request's user into the next. Writes outside a request (migrations, seeds, jobs) have `changed_by` null. The unused `withTx(userId, fn)` helper was removed.
+   - **Withdrawal overrides** are now audited: the override columns on `harvests`, `animal_production_records` and `sales` are written through audited rows, with the owner as `changed_by`.
+   - **API.** `GET /audit-log`, for the owner only. It is paged, newest first (`order=asc` reverses it), and filters by `table`, `record_id`, `changed_by`, `action` (one or more) and `date_from`/`date_to`. Each row adds `changed_by_name` and, for updates, `changed_fields`.
+   - Tests: `audit-log.test.js`, plus an override check in `animal-withdrawals.test.js`.
+6. ~~**Attachments**: upload with a size and MIME whitelist; `StorageAdapter` (local disk); attach to pest incidents, treatments, receipts and inspections.~~ Done in migration 021:
+   - **Schema.** `attachments`: `entity_type` is the table name, and the CHECK lists the tables a file can go on: `activities`, `crop_pests_diseases`, `growth_observations`, `animal_diseases_treatments`, `animal_health_records`, `inventory_transactions` and `financial_transactions`. `hive_inspections` joins the list in Phase 8. The table is audited.
+   - **Storage.** `src/storage`: `LocalDiskStorage` (`newKey`, `save`, `open`, `remove`) under `UPLOAD_DIR` (default `packages/backend/uploads`, git-ignored, never served statically). Keys are random (`YYYY/MM/<uuid>.<ext>`) and pattern-checked, so a key can't leave the root. An S3-compatible adapter can replace it with the same methods.
+   - **Upload.** `POST /attachments` takes multipart `file`, `entity_type`, `entity_id` and `caption`. multer holds the file in memory, up to `UPLOAD_MAX_MB` (default 10; over it → 413 `FILE_TOO_LARGE`). The type is read from the file's first bytes, never from its name or the browser: JPEG, PNG, WebP or PDF. The record must exist and be live. The file is written first; if the row then fails, the file is removed.
+   - **Read and change.** `GET /attachments?entity_type&entity_id` lists them, paged and newest first, with the uploader's name. `GET /attachments/:id` streams the file inline (`?download=true` to save it) with a sandboxing CSP. `PUT` changes the caption. `DELETE` soft-deletes the row and keeps the file for the audit trail. Captions and deletes are for the uploader, an owner or a manager. Finance attachments are for owners and managers only.
+   - Tests: `attachments.test.js`.
+7. ~~**Settings**: `farm_settings` with typed accessors and a settings page (currency, timezone, farm coordinates).~~ Done in migration 022 (the settings page is in item 10):
+   - **Schema.** `farm_settings`: `key`, `value` jsonb, `effective_from` and `updated_by`, unique on (`key`, `effective_from`). Plain settings are stored at `effective_from = '-infinity'`. Dated values, such as payroll rates in Phase 7, add rows, and the one in force on a date wins. The table is audited.
+   - **Service.** `settings.service.js` holds a registry of settings, each with a default and a check: `farm_name` ('My Farm'), `currency` ('KES', ISO 4217), `timezone` ('Africa/Nairobi', IANA) and `farm_location` (null, or latitude/longitude). Settings not yet saved take their default. Typed accessors: `getCurrency`, `getTimezone`, `getFarmLocation`, `getFarmName`.
+   - **API.** `GET /settings` is for anyone signed in. `PUT /settings` is for the owner only and takes some settings. Unknown keys or bad values refuse the whole change, with one detail per field.
+   - Tests: `settings.test.js`.
+8. ~~**Consolidation:** migrate `production_records` → `animal_production_records` and drop the former. Fix the care-plan behaviour so an animal can have multiple active plans (F20).~~ Done:
+   - **F18, migration 023.** Rows in `production_records` move to `animal_production_records`, each with a `production` activity (enterprise from its animal or group, performer from the recording user), and the old table is dropped. The old free-text product goes to the live production type of the same name and unit. Otherwise a type is created, as "<name> (<unit>)" when the name is taken with another unit or the old rows use it with several units. If a row has no type in its own unit to go to, the migration stops rather than read its quantity in the wrong unit. A row naming both an animal and a group takes the animal, as in 017.
+   - **F20.** An animal or group can follow several care plans at once. Applying a plan no longer cancels the others; applying a plan it already follows is refused (409 `CARE_PLAN_ALREADY_ACTIVE`), so cancel that schedule to restart it. The schedule and its tasks are written in one transaction, and the response is the new schedule. `GET /animals/individuals/:id/care-schedule` and `GET /animals/groups/:id/care-schedule` now return a list of active schedules, oldest start first. No frontend view used them.
+   - Crop batches keep one care plan at a time.
+   - Tests: `production-records-migration.test.js`; a regression test in `animals.test.js`.
+9. ~~**OpenAPI**: create `openapi.yaml` covering auth, users, inventory and activities; serve Swagger UI in dev; lint the spec in CI. From here on, every new endpoint must be in the spec.~~ Done:
+   - `packages/backend/openapi/openapi.yaml` (OpenAPI 3.1) covers health, auth, users, inventory, suppliers, withdrawals, activities, enterprises, the audit log, attachments and settings: 78 operations. It describes the bearer token, the `rt` refresh cookie, the response and error envelopes, and pagination. Users, activities, enterprises, audit entries, attachments and settings have full schemas. Inventory and supplier responses are generic records for now. Crops and animals follow in Phase 10.
+   - Swagger UI is at `/api/v1/docs` and the raw spec at `/api/v1/docs/openapi.json`, both outside production only.
+   - `npm run lint:openapi` (Redocly, recommended rules) runs in CI.
+   - `openapi.test.js` compares the spec with the Express routes both ways. A new route in a documented router, or a new router that is neither documented nor listed as pending, fails the suite.
+10. ~~**Frontend:** a farm timeline view (filterable); a timeline tab on batch, animal and group detail; attachment upload component; settings page.~~ Done:
+   - **Timeline.** `components/activities/ActivityTimeline.vue` is a lazy table filtered by search, type, status, enterprise and date range, with labour and cost totals per page. A row opens the activity's details and attachments. It backs the Farm Timeline page (`/timeline`) and a Timeline tab on the batch, animal and group pages.
+   - **Animal and group pages.** `/animals/:id` and `/animals/groups/:id` were placeholders and now have pages. An animal shows its facts, parents, timeline and offspring. A group shows its head count, deaths, sales and cost, its timeline and its head-count history.
+   - **Attachments.** `components/attachments/AttachmentPanel.vue` uploads (type and size checked before sending), lists with image thumbnails, previews images, opens PDFs, downloads, edits captions and deletes. The uploader, owners and managers may change an attachment. Files are fetched with the auth header as blobs. Records are attached to through their activity, which covers pest incidents, treatments and inspections.
+   - **Settings.** The Farm Settings page (`/settings`) is editable by the owner and read-only for others. It saves only what changed. The settings load once per session (`stores/settings.store.js`), and `utils/format.js` and the `useFormat` composable format money and timestamps in the farm's currency and time zone. The hard-coded KES and USD are gone from the forms and lists. The top bar shows the farm name.
+   - **Enterprises.** The Enterprises page (`/enterprises`) lists them for everyone; owners and managers create, edit, deactivate and delete them.
+   - **Audit log.** The Audit Log page (`/audit-log`, owner only) filters by table, record, user, change and date. A row expands to the fields before and after, and records with a page link to it.
+   - Tests: `utils/format`, `settings`, `activities`, `attachments`, `audit`, `dates` (`formatAge`), `toPageParams` with list filters, and the settings store.
+   - Not done: choosing the enterprise in the batch, animal and group forms. Records get the default from their type (item 4).
 
 **Deliverables:** every operational record appears on one timeline with labour and cost; the audit trail answers "who changed what"; photos and documents can be attached.
 

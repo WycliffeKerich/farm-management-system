@@ -52,6 +52,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Lint the OpenAPI spec
+        run: npm run lint:openapi
+        env:
+          REDOCLY_TELEMETRY: 'off'
+          REDOCLY_SUPPRESS_UPDATE_NOTICE: 'true'
+
       - name: Backend tests (coverage gate 60%)
         run: npm run test:ci -w packages/backend
 

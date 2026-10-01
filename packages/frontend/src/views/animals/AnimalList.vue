@@ -12,8 +12,10 @@ import { useActiveHolds } from '@/composables/useActiveHolds';
 import { useWithdrawalGuard } from '@/composables/useWithdrawalGuard';
 import HoldBadges from '@/components/withdrawals/HoldBadges.vue';
 import WithdrawalDialog from '@/components/withdrawals/WithdrawalDialog.vue';
+import { useFormat } from '@/composables/useFormat';
 
 const router = useRouter();
+const { currency, locale } = useFormat();
 const confirm = useConfirm();
 const toast = useToast();
 const authStore = useAuthStore();
@@ -804,7 +806,7 @@ onMounted(() => {
 
                     <div class="flex flex-col gap-2" v-if="animalForm.acquisition_type !== 'born'">
                         <label for="purchase_price" class="font-medium">Purchase Price</label>
-                        <InputNumber id="purchase_price" v-model="animalForm.purchase_price" :min="0" :minFractionDigits="2" :maxFractionDigits="2" mode="currency" currency="USD" class="w-full" />
+                        <InputNumber id="purchase_price" v-model="animalForm.purchase_price" :min="0" :minFractionDigits="2" :maxFractionDigits="2" mode="currency" :currency="currency" :locale="locale" class="w-full" />
                     </div>
                 </div>
 
@@ -842,7 +844,18 @@ onMounted(() => {
 
                 <div class="flex flex-col gap-2">
                     <label for="sale_price" class="font-medium">Sale Price *</label>
-                    <InputNumber id="sale_price" v-model="saleForm.sale_price" :min="0" :minFractionDigits="2" :maxFractionDigits="2" mode="currency" currency="USD" class="w-full" :class="{ 'p-invalid': saleSubmitted && !saleForm.sale_price }" />
+                    <InputNumber
+                        id="sale_price"
+                        v-model="saleForm.sale_price"
+                        :min="0"
+                        :minFractionDigits="2"
+                        :maxFractionDigits="2"
+                        mode="currency"
+                        :currency="currency"
+                        :locale="locale"
+                        class="w-full"
+                        :class="{ 'p-invalid': saleSubmitted && !saleForm.sale_price }"
+                    />
                     <small v-if="saleSubmitted && !saleForm.sale_price" class="text-red-500"> Sale price is required </small>
                 </div>
 

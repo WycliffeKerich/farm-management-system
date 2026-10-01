@@ -1,8 +1,9 @@
 const { db, pgp } = require('../config/database');
 const { AppError, ValidationError, NotFoundError } = require('../utils/errors');
 
-// Columns that callers can never write directly
-const PROTECTED_COLUMNS = ['id', 'created_at', 'updated_at', 'deleted_at'];
+// Columns that callers can never write directly. activity_id is set only by
+// the activity service, which links each detail row to its activity.
+const PROTECTED_COLUMNS = ['id', 'created_at', 'updated_at', 'deleted_at', 'activity_id'];
 
 // Column lists per table, loaded once from information_schema
 const columnCache = new Map();
@@ -188,6 +189,20 @@ class BaseRepository {
     if (Object.keys(values).length === 0) {
       throw new ValidationError('No valid fields provided');
     }
+    const query = pgp.helpers.insert(values, null, this.tableName) + ' RETURNING *';
+    return this.conn(t).one(query);
+  }
+
+  /**
+   * Create a detail row pointing at its activity. Only the activity service
+   * calls this (ADR-001); activity_id is never taken from the caller's data.
+   * @param {Object} data - Record data (non-writable keys are ignored)
+   * @param {number} activityId - The row's activity
+   * @param {Object} [t] - Task/transaction
+   * @returns {Promise<Object>} Created record
+   */
+  async createLinked(data, activityId, t) {
+    const values = { ...(await this.pickWritable(data)), activity_id: activityId };
     const query = pgp.helpers.insert(values, null, this.tableName) + ' RETURNING *';
     return this.conn(t).one(query);
   }

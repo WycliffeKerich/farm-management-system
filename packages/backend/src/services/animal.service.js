@@ -12,6 +12,7 @@ const breedingRecordRepository = require('../repositories/breeding-record.reposi
 const animalSaleRepository = require('../repositories/animal-sale.repository');
 const incubationRecordRepository = require('../repositories/incubation-record.repository');
 const withdrawalService = require('./withdrawal.service');
+const enterpriseService = require('./enterprise.service');
 const { db } = require('../config/database');
 const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
 const { addDays, toDateString } = require('../utils/dates');
@@ -53,6 +54,7 @@ class AnimalService {
     if (existing) {
       throw new ConflictError('Animal type with this name already exists');
     }
+    await enterpriseService.assertAssignable(data.enterprise_id);
     return await animalTypeRepository.create(data);
   }
 
@@ -73,6 +75,9 @@ class AnimalService {
       if (existing) {
         throw new ConflictError('Animal type with this name already exists');
       }
+    }
+    if (data.enterprise_id !== animalType.enterprise_id) {
+      await enterpriseService.assertAssignable(data.enterprise_id);
     }
 
     return await animalTypeRepository.update(id, data);
@@ -367,6 +372,7 @@ class AnimalService {
 
     const animalData = {
       ...data,
+      enterprise_id: await enterpriseService.forNewSubject(data, breed.animal_type_enterprise_id),
       tag_number: tagNumber,
       status: data.status || 'active',
       created_by: userId,
@@ -408,7 +414,15 @@ class AnimalService {
       }
     }
 
-    return await animalRepository.update(id, data);
+    if (data.enterprise_id !== animal.enterprise_id) {
+      await enterpriseService.assertAssignable(data.enterprise_id);
+    }
+
+    return db.tx(async (t) => {
+      const updated = await animalRepository.update(id, data, t);
+      await enterpriseService.subjectSaved(t, 'animals', updated);
+      return updated;
+    });
   }
 
   /**
@@ -572,6 +586,7 @@ class AnimalService {
 
     const groupData = {
       ...data,
+      enterprise_id: await enterpriseService.forNewSubject(data, breed.animal_type_enterprise_id),
       group_code: groupCode,
       initial_quantity: data.quantity,
       current_quantity: data.quantity,
@@ -601,7 +616,15 @@ class AnimalService {
       }
     }
 
-    return await animalGroupRepository.update(id, data);
+    if (data.enterprise_id !== group.enterprise_id) {
+      await enterpriseService.assertAssignable(data.enterprise_id);
+    }
+
+    return db.tx(async (t) => {
+      const updated = await animalGroupRepository.update(id, data, t);
+      await enterpriseService.subjectSaved(t, 'animal_groups', updated);
+      return updated;
+    });
   }
 
   /**
@@ -1079,12 +1102,13 @@ class AnimalService {
   // ==================== CARE SCHEDULES ====================
 
   /**
-   * Apply a care plan to an individual animal
+   * Apply a care plan to an individual animal. An animal can follow several
+   * plans at once, but each plan only once at a time.
    * @param {number} animalId - Animal ID
    * @param {number} planId - Care plan ID
    * @param {Date} startDate - Start date for the schedule
    * @param {number} userId - User ID
-   * @returns {Promise<Object>}
+   * @returns {Promise<Object>} The new schedule with its tasks and progress
    */
   async applyCarePlanToAnimal(animalId, planId, startDate, userId) {
     const animal = await animalRepository.findByIdWithDetails(animalId);
@@ -1101,39 +1125,21 @@ class AnimalService {
       throw new ValidationError('This care plan is only applicable to flocks/groups');
     }
 
-    // Deactivate any existing schedule for this plan
-    await animalCareScheduleRepository.deactivateForAnimal(animalId);
-
-    // Create new schedule
-    const schedule = await animalCareScheduleRepository.create({
-      animal_id: animalId,
-      plan_id: planId,
-      start_date: startDate || animal.date_of_birth || animal.date_acquired,
-      applied_by: userId,
-      status: 'active',
+    return this._applyCarePlan(plan, {
+      animalId,
+      startDate: startDate || animal.date_of_birth || animal.date_acquired,
+      userId,
     });
-
-    // Generate scheduled tasks
-    const scheduleStartDate = new Date(schedule.start_date);
-    const totalDays = plan.total_duration_days || 365;
-
-    for (const planTask of plan.tasks) {
-      await this._generateScheduledAnimalTasks(schedule.id, animalId, null, planTask, scheduleStartDate, totalDays);
-    }
-
-    // Update statuses based on current date
-    await scheduledAnimalTaskRepository.updateStatuses();
-
-    return await this.getAnimalCareSchedule(animalId);
   }
 
   /**
-   * Apply a care plan to a group
+   * Apply a care plan to a group. A group can follow several plans at once,
+   * but each plan only once at a time.
    * @param {number} groupId - Group ID
    * @param {number} planId - Care plan ID
    * @param {Date} startDate - Start date for the schedule
    * @param {number} userId - User ID
-   * @returns {Promise<Object>}
+   * @returns {Promise<Object>} The new schedule with its tasks and progress
    */
   async applyCarePlanToGroup(groupId, planId, startDate, userId) {
     const group = await animalGroupRepository.findByIdWithDetails(groupId);
@@ -1150,39 +1156,53 @@ class AnimalService {
       throw new ValidationError('This care plan is only applicable to individual animals');
     }
 
-    // Deactivate any existing schedule for this plan
-    await animalCareScheduleRepository.deactivateForGroup(groupId);
-
-    // Create new schedule
-    const schedule = await animalCareScheduleRepository.create({
-      animal_group_id: groupId,
-      plan_id: planId,
-      start_date: startDate || group.date_established || group.acquisition_date,
-      applied_by: userId,
-      status: 'active',
+    return this._applyCarePlan(plan, {
+      groupId,
+      startDate: startDate || group.date_established || group.acquisition_date,
+      userId,
+      groupQuantity: group.current_quantity ?? group.quantity,
     });
+  }
 
-    // Generate scheduled tasks
-    const scheduleStartDate = new Date(schedule.start_date);
-    const totalDays = plan.total_duration_days || 365;
-    const groupQuantity = group.current_quantity ?? group.quantity;
-
-    for (const planTask of plan.tasks) {
-      await this._generateScheduledAnimalTasks(
-        schedule.id,
-        null,
-        groupId,
-        planTask,
-        scheduleStartDate,
-        totalDays,
-        groupQuantity
+  /**
+   * Create a schedule for an animal or a group, with its tasks
+   * @private
+   */
+  async _applyCarePlan(plan, { animalId = null, groupId = null, startDate, userId, groupQuantity = null }) {
+    const subject = animalId ? { animal_id: animalId } : { animal_group_id: groupId };
+    if (await animalCareScheduleRepository.exists({ ...subject, plan_id: plan.id, status: 'active' })) {
+      throw new ConflictError(
+        `This ${animalId ? 'animal' : 'group'} already follows this care plan; cancel that schedule to start it again`,
+        'CARE_PLAN_ALREADY_ACTIVE'
       );
     }
+
+    const schedule = await db.tx(async (t) => {
+      const created = await animalCareScheduleRepository.create(
+        { ...subject, plan_id: plan.id, start_date: startDate, applied_by: userId, status: 'active' },
+        t
+      );
+      const scheduleStartDate = new Date(created.start_date);
+      const totalDays = plan.total_duration_days || 365;
+      for (const planTask of plan.tasks) {
+        await this._generateScheduledAnimalTasks(
+          created.id,
+          animalId,
+          groupId,
+          planTask,
+          scheduleStartDate,
+          totalDays,
+          groupQuantity,
+          t
+        );
+      }
+      return created;
+    });
 
     // Update statuses based on current date
     await scheduledAnimalTaskRepository.updateStatuses();
 
-    return await this.getGroupCareSchedule(groupId);
+    return this._withTasksAndProgress(await animalCareScheduleRepository.findWithPlan(schedule.id));
   }
 
   /**
@@ -1196,37 +1216,41 @@ class AnimalService {
     planTask,
     startDate,
     totalDays,
-    groupQuantity = null
+    groupQuantity = null,
+    t
   ) {
     const createTask = async (dayOffset, recurringSeq = null) => {
       const plannedDate = addDays(startDate, dayOffset);
       const dueStart = addDays(plannedDate, -(planTask.tolerance_days_before || 0));
       const dueEnd = addDays(plannedDate, planTask.tolerance_days_after || 2);
 
-      await scheduledAnimalTaskRepository.create({
-        animal_id: animalId,
-        animal_group_id: groupId,
-        schedule_id: scheduleId,
-        plan_task_id: planTask.id,
-        planned_date: plannedDate,
-        due_date_start: dueStart,
-        due_date_end: dueEnd,
-        task_name: planTask.task_name,
-        description: planTask.description,
-        task_type: planTask.task_type,
-        priority: planTask.priority,
-        estimated_hours: planTask.estimated_hours,
-        input_type: planTask.input_type,
-        input_product_name: planTask.input_product_name,
-        input_quantity: planTask.input_quantity,
-        input_unit: planTask.input_unit,
-        input_dosage_per_animal: planTask.input_dosage_per_animal,
-        input_application_method: planTask.input_application_method,
-        quantity_total: groupQuantity,
-        is_recurring_instance: recurringSeq !== null,
-        recurring_sequence: recurringSeq,
-        status: 'pending',
-      });
+      await scheduledAnimalTaskRepository.create(
+        {
+          animal_id: animalId,
+          animal_group_id: groupId,
+          schedule_id: scheduleId,
+          plan_task_id: planTask.id,
+          planned_date: plannedDate,
+          due_date_start: dueStart,
+          due_date_end: dueEnd,
+          task_name: planTask.task_name,
+          description: planTask.description,
+          task_type: planTask.task_type,
+          priority: planTask.priority,
+          estimated_hours: planTask.estimated_hours,
+          input_type: planTask.input_type,
+          input_product_name: planTask.input_product_name,
+          input_quantity: planTask.input_quantity,
+          input_unit: planTask.input_unit,
+          input_dosage_per_animal: planTask.input_dosage_per_animal,
+          input_application_method: planTask.input_application_method,
+          quantity_total: groupQuantity,
+          is_recurring_instance: recurringSeq !== null,
+          recurring_sequence: recurringSeq,
+          status: 'pending',
+        },
+        t
+      );
     };
 
     // Create the initial task
@@ -1250,49 +1274,34 @@ class AnimalService {
   }
 
   /**
-   * Get care schedule for an animal
+   * Active care schedules of an animal, each with its tasks and progress
    * @param {number} animalId - Animal ID
-   * @returns {Promise<Object>}
+   * @returns {Promise<Array>}
    */
-  async getAnimalCareSchedule(animalId) {
-    const schedule = await animalCareScheduleRepository.findActiveByAnimalId(animalId);
-    if (!schedule) {
-      return null;
-    }
-
-    const [tasks, progress] = await Promise.all([
-      scheduledAnimalTaskRepository.findByScheduleId(schedule.id),
-      animalCareScheduleRepository.getProgress(schedule.id),
-    ]);
-
-    return {
-      ...schedule,
-      tasks,
-      progress,
-    };
+  async getAnimalCareSchedules(animalId) {
+    const schedules = await animalCareScheduleRepository.findActive({ animal_id: animalId });
+    return Promise.all(schedules.map((schedule) => this._withTasksAndProgress(schedule)));
   }
 
   /**
-   * Get care schedule for a group
+   * Active care schedules of a group, each with its tasks and progress
    * @param {number} groupId - Group ID
-   * @returns {Promise<Object>}
+   * @returns {Promise<Array>}
    */
-  async getGroupCareSchedule(groupId) {
-    const schedule = await animalCareScheduleRepository.findActiveByGroupId(groupId);
-    if (!schedule) {
-      return null;
-    }
+  async getGroupCareSchedules(groupId) {
+    const schedules = await animalCareScheduleRepository.findActive({ animal_group_id: groupId });
+    return Promise.all(schedules.map((schedule) => this._withTasksAndProgress(schedule)));
+  }
 
+  /**
+   * @private
+   */
+  async _withTasksAndProgress(schedule) {
     const [tasks, progress] = await Promise.all([
       scheduledAnimalTaskRepository.findByScheduleId(schedule.id),
       animalCareScheduleRepository.getProgress(schedule.id),
     ]);
-
-    return {
-      ...schedule,
-      tasks,
-      progress,
-    };
+    return { ...schedule, tasks, progress };
   }
 
   /**

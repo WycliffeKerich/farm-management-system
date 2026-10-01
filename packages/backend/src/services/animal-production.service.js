@@ -1,5 +1,6 @@
 const animalProductionRepository = require('../repositories/animal-production.repository');
 const withdrawalService = require('./withdrawal.service');
+const activityService = require('./activity.service');
 const { db } = require('../config/database');
 const { toDateString } = require('../utils/dates');
 const { AppError, ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
@@ -60,9 +61,10 @@ class AnimalProductionService {
    * WITHDRAWAL_ACTIVE) unless the owner gives an override_reason.
    * @param {Object} data - Production record data, with optional override_reason
    * @param {Object} user - { id, role }
+   * @param {Object} [t] - Outer transaction to join
    * @returns {Promise<Object>}
    */
-  async createProductionRecord(data, user) {
+  async createProductionRecord(data, user, t) {
     // Validate that either animal_id or animal_group_id is provided
     if (!data.animal_id && !data.animal_group_id) {
       throw new ValidationError('Either animal or animal group must be specified');
@@ -72,7 +74,7 @@ class AnimalProductionService {
       throw new ValidationError('Cannot specify both animal and animal group');
     }
 
-    return db.tx(async (tx) => {
+    return (t || db).tx(async (tx) => {
       const type = await this.getProductionTypeById(data.production_type_id, tx);
       const override = await withdrawalService.checkProduction(
         data,
@@ -80,10 +82,11 @@ class AnimalProductionService {
         { user, override_reason: data.override_reason },
         tx
       );
-      return animalProductionRepository.createProductionRecord(
-        { ...withdrawalService.withoutOverride(data), ...override, recorded_by: user && user.id },
-        tx
-      );
+      return activityService.createDetail(tx, 'animal_production_records', animalProductionRepository, {
+        ...withdrawalService.withoutOverride(data),
+        ...override,
+        recorded_by: user && user.id,
+      });
     });
   }
 
@@ -113,17 +116,21 @@ class AnimalProductionService {
         Object.assign(changes, override);
       }
 
-      return animalProductionRepository.updateProductionRecord(record.id, changes, tx);
+      const updated = await animalProductionRepository.updateProductionRecord(record.id, changes, tx);
+      return activityService.syncDetail(tx, 'animal_production_records', updated);
     });
   }
 
   async deleteProductionRecord(id) {
-    await this.getProductionRecordById(id);
-    const result = await animalProductionRepository.deleteProductionRecord(id);
-    if (result.rowCount === 0) {
-      throw new AppError('Failed to delete production record', 500, 'SERVER_ERROR');
-    }
-    return { message: 'Production record deleted successfully' };
+    return db.tx(async (tx) => {
+      const record = await this.getProductionRecordById(id, tx);
+      const result = await animalProductionRepository.deleteProductionRecord(record.id, tx);
+      if (result.rowCount === 0) {
+        throw new AppError('Failed to delete production record', 500, 'SERVER_ERROR');
+      }
+      await activityService.removeDetail(tx, record);
+      return { message: 'Production record deleted successfully' };
+    });
   }
 
   // ==================== STATISTICS ====================

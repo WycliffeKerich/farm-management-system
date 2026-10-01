@@ -22,6 +22,12 @@ export const routes = [
                 component: () => import('@/views/Dashboard.vue'),
                 meta: { menu: { section: 'home', label: 'Dashboard', icon: 'pi pi-fw pi-home' } }
             },
+            {
+                path: '/timeline',
+                name: 'farm-timeline',
+                component: () => import('@/views/activities/FarmTimeline.vue'),
+                meta: { breadcrumb: ['Farm', 'Timeline'], menu: { section: 'home', label: 'Farm Timeline', icon: 'pi pi-fw pi-history' } }
+            },
             // Crop Management
             {
                 path: '/crops',
@@ -99,7 +105,7 @@ export const routes = [
             {
                 path: '/animals/:id',
                 name: 'animal-detail',
-                component: () => import('@/views/pages/Empty.vue'),
+                component: () => import('@/views/animals/AnimalDetail.vue'),
                 meta: { breadcrumb: ['Animals', 'Animal Detail'] }
             },
             {
@@ -111,7 +117,7 @@ export const routes = [
             {
                 path: '/animals/groups/:id',
                 name: 'animal-group-detail',
-                component: () => import('@/views/pages/Empty.vue'),
+                component: () => import('@/views/animals/AnimalGroupDetail.vue'),
                 meta: { breadcrumb: ['Animals', 'Group Detail'] }
             },
             {
@@ -217,6 +223,24 @@ export const routes = [
                 name: 'users',
                 component: () => import('@/views/users/UserList.vue'),
                 meta: { breadcrumb: ['Administration', 'Users'], menu: { section: 'admin', label: 'Users', icon: 'pi pi-fw pi-user-edit' }, roles: ['owner'] }
+            },
+            {
+                path: '/enterprises',
+                name: 'enterprises',
+                component: () => import('@/views/settings/EnterpriseList.vue'),
+                meta: { breadcrumb: ['Administration', 'Enterprises'], menu: { section: 'admin', label: 'Enterprises', icon: 'pi pi-fw pi-briefcase' } }
+            },
+            {
+                path: '/audit-log',
+                name: 'audit-log',
+                component: () => import('@/views/settings/AuditLog.vue'),
+                meta: { breadcrumb: ['Administration', 'Audit Log'], menu: { section: 'admin', label: 'Audit Log', icon: 'pi pi-fw pi-history' }, roles: ['owner'] }
+            },
+            {
+                path: '/settings',
+                name: 'farm-settings',
+                component: () => import('@/views/settings/FarmSettings.vue'),
+                meta: { breadcrumb: ['Administration', 'Farm Settings'], menu: { section: 'admin', label: 'Farm Settings', icon: 'pi pi-fw pi-sliders-h' } }
             },
             {
                 path: '/profile',

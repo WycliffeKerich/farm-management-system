@@ -108,17 +108,36 @@ ON CONFLICT DO NOTHING;
 -- 8. SEED ENTERPRISES
 -- ============================================================================
 
-INSERT INTO enterprises (name, category, description, is_active) VALUES
-('Tomato Production', 'crops', 'Greenhouse tomato farming', true),
-('Capsicum Production', 'crops', 'Bell pepper production', true),
-('Strawberry Production', 'crops', 'Strawberry farming', true),
-('Mushroom Production', 'crops', 'Button and oyster mushroom cultivation', true),
-('Egg Production', 'animals', 'Layer chicken egg production', true),
-('Milk Production - Goats', 'animals', 'Dairy goat milk production', true),
-('Milk Production - Cows', 'animals', 'Dairy cow milk production', true),
-('Sheep Farming', 'animals', 'Dorper sheep meat production', true),
-('Honey Production', 'beekeeping', 'Honey from beehives', true)
-ON CONFLICT DO NOTHING;
+INSERT INTO enterprises (name, enterprise_type, unit_of_output, description, is_active) VALUES
+('Tomato Production', 'crops', 'kg', 'Greenhouse tomato farming', true),
+('Capsicum Production', 'crops', 'kg', 'Bell pepper production', true),
+('Strawberry Production', 'crops', 'kg', 'Strawberry farming', true),
+('Mushroom Production', 'mushrooms', 'kg', 'Button and oyster mushroom cultivation', true),
+('Egg Production', 'poultry', 'egg', 'Layer chicken egg production', true),
+('Milk Production - Goats', 'dairy', 'litre', 'Dairy goat milk production', true),
+('Milk Production - Cows', 'dairy', 'litre', 'Dairy cow milk production', true),
+('Sheep Farming', 'livestock', 'kg', 'Dorper sheep meat production', true),
+('Honey Production', 'apiculture', 'kg', 'Honey from beehives', true)
+ON CONFLICT (LOWER(name)) WHERE deleted_at IS NULL DO NOTHING;
+
+-- The enterprise each type's new batches, animals and groups default to
+UPDATE crop_types ct SET enterprise_id = e.id
+  FROM enterprises e,
+       (VALUES ('Tomato', 'Tomato Production'), ('Capsicum', 'Capsicum Production'),
+               ('Strawberry', 'Strawberry Production'), ('Button Mushroom', 'Mushroom Production'),
+               ('Oyster Mushroom', 'Mushroom Production')) AS link(type_name, enterprise_name)
+ WHERE ct.enterprise_id IS NULL AND ct.deleted_at IS NULL
+   AND LOWER(ct.name) = LOWER(link.type_name)
+   AND LOWER(e.name) = LOWER(link.enterprise_name) AND e.deleted_at IS NULL;
+
+UPDATE animal_types at SET enterprise_id = e.id
+  FROM enterprises e,
+       (VALUES ('Chicken', 'Egg Production'), ('Goat', 'Milk Production - Goats'),
+               ('Cow', 'Milk Production - Cows'), ('Sheep', 'Sheep Farming'),
+               ('Bee', 'Honey Production')) AS link(type_name, enterprise_name)
+ WHERE at.enterprise_id IS NULL AND at.deleted_at IS NULL
+   AND LOWER(at.name) = LOWER(link.type_name)
+   AND LOWER(e.name) = LOWER(link.enterprise_name) AND e.deleted_at IS NULL;
 
 -- ============================================================================
 -- 9. SEED TRANSACTION CATEGORIES

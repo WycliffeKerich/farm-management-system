@@ -3,10 +3,12 @@ import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useLayout } from '@/layout/composables/layout';
 import { useAuthStore } from '@/stores/auth.store';
+import { useSettingsStore } from '@/stores/settings.store';
 import AppConfigurator from './AppConfigurator.vue';
 
 const { toggleMenu, toggleDarkMode, isDarkTheme } = useLayout();
 const authStore = useAuthStore();
+const settingsStore = useSettingsStore();
 const router = useRouter();
 
 const menu = ref();
@@ -44,7 +46,7 @@ const toggleProfileMenu = (event) => {
             </button>
             <router-link to="/" class="layout-topbar-logo">
                 <i class="pi pi-sun text-2xl text-primary"></i>
-                <span>Farm Management</span>
+                <span>{{ settingsStore.loaded ? settingsStore.settings.farm_name : 'Farm Management' }}</span>
             </router-link>
         </div>
 

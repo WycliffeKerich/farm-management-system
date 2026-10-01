@@ -591,5 +591,30 @@ SET current_occupancy = (
 );
 
 -- ============================================================================
+-- 8. ENTERPRISES OF BATCHES, ANIMALS AND GROUPS
+-- ============================================================================
+-- Batches, animals and groups with no enterprise take their type's, and
+-- their activities with none take the subject's, as the services do
+
+UPDATE crop_batches cb SET enterprise_id = ct.enterprise_id
+  FROM crop_varieties cv JOIN crop_types ct ON ct.id = cv.crop_type_id
+ WHERE cv.id = cb.crop_variety_id AND cb.enterprise_id IS NULL AND ct.enterprise_id IS NOT NULL;
+
+UPDATE animals a SET enterprise_id = at.enterprise_id
+  FROM animal_breeds ab JOIN animal_types at ON at.id = ab.animal_type_id
+ WHERE ab.id = a.animal_breed_id AND a.enterprise_id IS NULL AND at.enterprise_id IS NOT NULL;
+
+UPDATE animal_groups ag SET enterprise_id = at.enterprise_id
+  FROM animal_breeds ab JOIN animal_types at ON at.id = ab.animal_type_id
+ WHERE ab.id = ag.animal_breed_id AND ag.enterprise_id IS NULL AND at.enterprise_id IS NOT NULL;
+
+UPDATE activities act
+   SET enterprise_id = COALESCE(
+           (SELECT enterprise_id FROM crop_batches WHERE id = act.crop_batch_id),
+           (SELECT enterprise_id FROM animals WHERE id = act.animal_id),
+           (SELECT enterprise_id FROM animal_groups WHERE id = act.animal_group_id))
+ WHERE act.enterprise_id IS NULL;
+
+-- ============================================================================
 -- ANIMAL SEED DATA COMPLETE
 -- ============================================================================

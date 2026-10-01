@@ -12,8 +12,10 @@ import { useActiveHolds } from '@/composables/useActiveHolds';
 import { useWithdrawalGuard } from '@/composables/useWithdrawalGuard';
 import HoldBadges from '@/components/withdrawals/HoldBadges.vue';
 import WithdrawalDialog from '@/components/withdrawals/WithdrawalDialog.vue';
+import { useFormat } from '@/composables/useFormat';
 
 const router = useRouter();
+const { currency, locale, formatMoney } = useFormat();
 const confirm = useConfirm();
 const toast = useToast();
 const authStore = useAuthStore();
@@ -526,7 +528,7 @@ const formatStatus = (status) => {
 };
 
 const formatCurrency = (value) => {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value || 0);
+    return formatMoney(value || 0);
 };
 
 const getStatusSeverity = (status) => {
@@ -763,7 +765,7 @@ onMounted(() => {
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="flex flex-col gap-2">
                         <label for="cost_per_unit" class="font-medium">Cost Per Animal</label>
-                        <InputNumber id="cost_per_unit" v-model="groupForm.cost_per_unit" :min="0" :minFractionDigits="2" :maxFractionDigits="2" mode="currency" currency="USD" class="w-full" />
+                        <InputNumber id="cost_per_unit" v-model="groupForm.cost_per_unit" :min="0" :minFractionDigits="2" :maxFractionDigits="2" mode="currency" :currency="currency" :locale="locale" class="w-full" />
                     </div>
 
                     <div v-if="editingGroup" class="flex flex-col gap-2">
@@ -820,7 +822,7 @@ onMounted(() => {
 
                 <div class="flex flex-col gap-2">
                     <label for="add_cost" class="font-medium">Cost Per Animal</label>
-                    <InputNumber id="add_cost" v-model="additionForm.cost_per_unit" :min="0" :minFractionDigits="2" :maxFractionDigits="2" mode="currency" currency="USD" class="w-full" />
+                    <InputNumber id="add_cost" v-model="additionForm.cost_per_unit" :min="0" :minFractionDigits="2" :maxFractionDigits="2" mode="currency" :currency="currency" :locale="locale" class="w-full" />
                 </div>
 
                 <div class="flex flex-col gap-2">
@@ -865,7 +867,8 @@ onMounted(() => {
                         :minFractionDigits="2"
                         :maxFractionDigits="2"
                         mode="currency"
-                        currency="USD"
+                        :currency="currency"
+                        :locale="locale"
                         class="w-full"
                         :class="{ 'p-invalid': saleSubmitted && !saleForm.price_per_unit }"
                     />

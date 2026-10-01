@@ -6,6 +6,11 @@ const animalRoutes = require('./animal.routes');
 const inventoryRoutes = require('./inventory.routes');
 const supplierRoutes = require('./supplier.routes');
 const withdrawalRoutes = require('./withdrawal.routes');
+const activityRoutes = require('./activity.routes');
+const enterpriseRoutes = require('./enterprise.routes');
+const auditLogRoutes = require('./audit-log.routes');
+const attachmentRoutes = require('./attachment.routes');
+const settingsRoutes = require('./settings.routes');
 const { db } = require('../config/database');
 
 const router = express.Router();
@@ -50,6 +55,21 @@ router.use('/suppliers', supplierRoutes);
 
 // Withdrawal periods and pre-harvest intervals in force
 router.use('/withdrawals', withdrawalRoutes);
+
+// The farm timeline and offline sync
+router.use('/activities', activityRoutes);
+
+// Enterprises: the lines of business costed on their own
+router.use('/enterprises', enterpriseRoutes);
+
+// Who changed what (owner only)
+router.use('/audit-log', auditLogRoutes);
+
+// Photos and documents attached to records
+router.use('/attachments', attachmentRoutes);
+
+// Farm-wide settings: currency, timezone, location
+router.use('/settings', settingsRoutes);
 
 // TODO: Add more route modules as they are implemented
 // router.use('/financial', financialRoutes);

@@ -1,11 +1,16 @@
 <script setup>
 import { useLayout } from '@/layout/composables/layout';
-import { computed } from 'vue';
+import { useSettingsStore } from '@/stores/settings.store';
+import { computed, onMounted } from 'vue';
 import AppFooter from './AppFooter.vue';
 import AppSidebar from './AppSidebar.vue';
 import AppTopbar from './AppTopbar.vue';
 
 const { layoutConfig, layoutState, hideMobileMenu } = useLayout();
+const settingsStore = useSettingsStore();
+
+// The farm's name, currency and time zone, for every signed-in page
+onMounted(() => settingsStore.load());
 
 const containerClass = computed(() => {
     return {

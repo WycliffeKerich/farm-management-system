@@ -13,6 +13,8 @@ const scheduledBatchTaskRepository = require('../repositories/scheduled-batch-ta
 const inventoryItemRepository = require('../repositories/inventory-item.repository');
 const inventoryService = require('./inventory.service');
 const withdrawalService = require('./withdrawal.service');
+const activityService = require('./activity.service');
+const enterpriseService = require('./enterprise.service');
 const { db } = require('../config/database');
 const { INVENTORY_REFERENCE_TYPES } = require('../config/constants');
 const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
@@ -57,6 +59,7 @@ class CropService {
     if (existing) {
       throw new ConflictError('Crop type with this name already exists');
     }
+    await enterpriseService.assertAssignable(data.enterprise_id);
     return await cropTypeRepository.create(data);
   }
 
@@ -77,6 +80,9 @@ class CropService {
       if (existing) {
         throw new ConflictError('Crop type with this name already exists');
       }
+    }
+    if (data.enterprise_id !== cropType.enterprise_id) {
+      await enterpriseService.assertAssignable(data.enterprise_id);
     }
 
     return await cropTypeRepository.update(id, data);
@@ -373,6 +379,7 @@ class CropService {
 
     const batchData = {
       ...data,
+      enterprise_id: await enterpriseService.forNewSubject(data, variety.crop_type_enterprise_id),
       batch_code: batchCode,
       expected_harvest_date: expectedHarvestDate,
       status: data.status || 'planted',
@@ -408,7 +415,15 @@ class CropService {
       }
     }
 
-    return await cropBatchRepository.update(id, data);
+    if (data.enterprise_id !== batch.enterprise_id) {
+      await enterpriseService.assertAssignable(data.enterprise_id);
+    }
+
+    return db.tx(async (t) => {
+      const updated = await cropBatchRepository.update(id, data, t);
+      await enterpriseService.subjectSaved(t, 'crop_batches', updated);
+      return updated;
+    });
   }
 
   /**
@@ -453,21 +468,22 @@ class CropService {
    * @param {number} batchId - Batch ID
    * @param {Object} data - Observation data
    * @param {number} userId - User ID
+   * @param {Object} [t] - Outer transaction to join
    * @returns {Promise<Object>}
    */
-  async addObservation(batchId, data, userId) {
-    const batch = await cropBatchRepository.findById(batchId);
-    if (!batch) {
-      throw new NotFoundError('Crop batch not found');
-    }
+  async addObservation(batchId, data, userId, t) {
+    return (t || db).tx(async (tx) => {
+      const batch = await cropBatchRepository.findById(batchId, tx);
+      if (!batch) {
+        throw new NotFoundError('Crop batch not found');
+      }
 
-    const observationData = {
-      ...data,
-      batch_id: batchId,
-      recorded_by: userId,
-    };
-
-    return await growthObservationRepository.create(observationData);
+      return activityService.createDetail(tx, 'growth_observations', growthObservationRepository, {
+        ...data,
+        batch_id: batch.id,
+        recorded_by: userId,
+      });
+    });
   }
 
   /**
@@ -485,11 +501,14 @@ class CropService {
    * @returns {Promise<void>}
    */
   async deleteObservation(id) {
-    const observation = await growthObservationRepository.findById(id);
-    if (!observation) {
-      throw new NotFoundError('Observation not found');
-    }
-    await growthObservationRepository.softDelete(id);
+    await db.tx(async (tx) => {
+      const observation = await growthObservationRepository.findById(id, tx);
+      if (!observation) {
+        throw new NotFoundError('Observation not found');
+      }
+      await growthObservationRepository.softDelete(observation.id, tx);
+      await activityService.removeDetail(tx, observation);
+    });
   }
 
   // ==================== HARVESTS ====================
@@ -500,11 +519,12 @@ class CropService {
    * @param {number} batchId - Batch ID
    * @param {Object} data - Harvest data, with an optional override_reason
    * @param {Object} user - The signed-in user ({id, role})
+   * @param {Object} [t] - Outer transaction to join
    * @returns {Promise<Object>}
    * @throws {ConflictError} WITHDRAWAL_ACTIVE
    */
-  async recordHarvest(batchId, data, user) {
-    return db.tx(async (tx) => {
+  async recordHarvest(batchId, data, user, t) {
+    return (t || db).tx(async (tx) => {
       const batch = await cropBatchRepository.findById(batchId, tx);
       if (!batch) {
         throw new NotFoundError('Crop batch not found');
@@ -517,19 +537,16 @@ class CropService {
         tx
       );
 
-      const harvest = await harvestRepository.create(
-        {
-          harvest_date: data.harvest_date,
-          quantity: data.quantity,
-          unit: data.unit,
-          grade: data.grade,
-          notes: data.notes,
-          batch_id: batch.id,
-          recorded_by: user.id,
-          ...override,
-        },
-        tx
-      );
+      const harvest = await activityService.createDetail(tx, 'harvests', harvestRepository, {
+        harvest_date: data.harvest_date,
+        quantity: data.quantity,
+        unit: data.unit,
+        grade: data.grade,
+        notes: data.notes,
+        batch_id: batch.id,
+        recorded_by: user.id,
+        ...override,
+      });
 
       // Update batch status to 'harvesting' if it's still 'growing'
       if (batch.status === 'growing' || batch.status === 'planted') {
@@ -574,11 +591,14 @@ class CropService {
    * @returns {Promise<void>}
    */
   async deleteHarvest(id) {
-    const harvest = await harvestRepository.findById(id);
-    if (!harvest) {
-      throw new NotFoundError('Harvest record not found');
-    }
-    await harvestRepository.softDelete(id);
+    await db.tx(async (tx) => {
+      const harvest = await harvestRepository.findById(id, tx);
+      if (!harvest) {
+        throw new NotFoundError('Harvest record not found');
+      }
+      await harvestRepository.softDelete(harvest.id, tx);
+      await activityService.removeDetail(tx, harvest);
+    });
   }
 
   // ==================== INPUT APPLICATIONS ====================
@@ -622,7 +642,10 @@ class CropService {
       const interval = longerInterval(data.pre_harvest_interval_days, item && item.pre_harvest_interval_days);
 
       // Computed columns are set here only, never taken from the request
-      const application = await cropInputApplicationRepository.create(
+      const application = await activityService.createDetail(
+        tx,
+        'crop_input_applications',
+        cropInputApplicationRepository,
         {
           batch_id: batch.id,
           application_date: applicationDate,
@@ -637,8 +660,7 @@ class CropService {
           inventory_item_id: item ? item.id : null,
           pre_harvest_interval_days: interval,
           safe_harvest_date: interval === null ? null : addDays(applicationDate, interval),
-        },
-        tx
+        }
       );
       if (!item) {
         return application;
@@ -665,7 +687,7 @@ class CropService {
         tx
       );
       return {
-        ...updated,
+        ...(await activityService.syncDetail(tx, 'crop_input_applications', updated)),
         stock: { batch_deductions: drawn.batch_deductions, current_stock: drawn.current_stock, unit: drawn.unit },
       };
     });
@@ -702,6 +724,7 @@ class CropService {
         throw new NotFoundError('Input application not found');
       }
       await cropInputApplicationRepository.softDelete(application.id, tx);
+      await activityService.removeDetail(tx, application);
       await inventoryService.reverseReference(
         INVENTORY_REFERENCE_TYPES.CROP_INPUT_APPLICATION,
         application.id,
@@ -718,22 +741,23 @@ class CropService {
    * @param {number} batchId - Batch ID
    * @param {Object} data - Incident data
    * @param {number} userId - User ID
+   * @param {Object} [t] - Outer transaction to join
    * @returns {Promise<Object>}
    */
-  async reportPestDisease(batchId, data, userId) {
-    const batch = await cropBatchRepository.findById(batchId);
-    if (!batch) {
-      throw new NotFoundError('Crop batch not found');
-    }
+  async reportPestDisease(batchId, data, userId, t) {
+    return (t || db).tx(async (tx) => {
+      const batch = await cropBatchRepository.findById(batchId, tx);
+      if (!batch) {
+        throw new NotFoundError('Crop batch not found');
+      }
 
-    const incidentData = {
-      ...data,
-      batch_id: batchId,
-      recorded_by: userId,
-      status: data.status || 'active',
-    };
-
-    return await cropPestDiseaseRepository.create(incidentData);
+      return activityService.createDetail(tx, 'crop_pests_diseases', cropPestDiseaseRepository, {
+        ...data,
+        batch_id: batch.id,
+        recorded_by: userId,
+        status: data.status || 'active',
+      });
+    });
   }
 
   /**
@@ -792,11 +816,14 @@ class CropService {
    * @returns {Promise<void>}
    */
   async deletePestDisease(id) {
-    const record = await cropPestDiseaseRepository.findById(id);
-    if (!record) {
-      throw new NotFoundError('Pest/disease record not found');
-    }
-    await cropPestDiseaseRepository.softDelete(id);
+    await db.tx(async (tx) => {
+      const record = await cropPestDiseaseRepository.findById(id, tx);
+      if (!record) {
+        throw new NotFoundError('Pest/disease record not found');
+      }
+      await cropPestDiseaseRepository.softDelete(record.id, tx);
+      await activityService.removeDetail(tx, record);
+    });
   }
 
   // ==================== CARE PLANS ====================

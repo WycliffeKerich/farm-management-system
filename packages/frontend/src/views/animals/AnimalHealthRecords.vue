@@ -14,8 +14,10 @@ import DatePicker from 'primevue/datepicker';
 import Tag from 'primevue/tag';
 import RadioButton from 'primevue/radiobutton';
 import { toApiDate } from '@/utils/dates';
+import { useFormat } from '@/composables/useFormat';
 
 const toast = useToast();
+const { currency, locale, formatMoney } = useFormat();
 
 // State
 const records = ref([]);
@@ -246,7 +248,7 @@ const formatDate = (date) => {
 };
 
 const formatCurrency = (value) => {
-    return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(value);
+    return formatMoney(value);
 };
 
 const getRecordTypeSeverity = (type) => {
@@ -497,7 +499,7 @@ onMounted(() => {
                 <div class="grid grid-cols-2 gap-4">
                     <div class="flex flex-col gap-2">
                         <label for="cost">Cost</label>
-                        <InputNumber id="cost" v-model="recordForm.cost" mode="currency" currency="KES" locale="en-KE" placeholder="0.00" />
+                        <InputNumber id="cost" v-model="recordForm.cost" mode="currency" :currency="currency" :locale="locale" placeholder="0.00" />
                     </div>
 
                     <div class="flex flex-col gap-2">

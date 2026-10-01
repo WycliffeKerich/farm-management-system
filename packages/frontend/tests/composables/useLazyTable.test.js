@@ -16,6 +16,11 @@ describe('toPageParams', () => {
         });
         expect(toPageParams({ first: 0, rows: 10, sortField: null, sortOrder: 1, filters: {} })).toEqual({ page: 1, limit: 10 });
     });
+
+    it('sends a list filter only when it has values', () => {
+        expect(toPageParams({ first: 0, rows: 10, sortField: null, sortOrder: 1, filters: { action: [] } })).toEqual({ page: 1, limit: 10 });
+        expect(toPageParams({ first: 0, rows: 10, sortField: null, sortOrder: 1, filters: { action: ['insert', 'update'] } })).toEqual({ page: 1, limit: 10, action: ['insert', 'update'] });
+    });
 });
 
 describe('useLazyTable', () => {

@@ -9,8 +9,10 @@ import { heldProductFor, holdProducts } from '@/utils/withdrawals';
 import { useActiveHolds } from '@/composables/useActiveHolds';
 import { useWithdrawalGuard } from '@/composables/useWithdrawalGuard';
 import WithdrawalDialog from '@/components/withdrawals/WithdrawalDialog.vue';
+import { useFormat } from '@/composables/useFormat';
 
 const confirm = useConfirm();
+const { currency, locale, formatMoney } = useFormat();
 const toast = useToast();
 const holds = useActiveHolds();
 const withdrawalGuard = useWithdrawalGuard();
@@ -330,7 +332,7 @@ const formatNumber = (value) => {
 };
 
 const formatCurrency = (value) => {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value || 0);
+    return formatMoney(value || 0);
 };
 
 const getCategoryIcon = (category) => {
@@ -584,7 +586,7 @@ onMounted(() => {
 
                     <div class="flex flex-col gap-2">
                         <label for="unit_price" class="font-medium">Unit Price</label>
-                        <InputNumber id="unit_price" v-model="recordForm.unit_price" :min="0" :minFractionDigits="2" :maxFractionDigits="2" mode="currency" currency="USD" class="w-full" />
+                        <InputNumber id="unit_price" v-model="recordForm.unit_price" :min="0" :minFractionDigits="2" :maxFractionDigits="2" mode="currency" :currency="currency" :locale="locale" class="w-full" />
                     </div>
                 </div>
 

@@ -5,6 +5,7 @@ const animalGroupRepository = require('../repositories/animal-group.repository')
 const inventoryItemRepository = require('../repositories/inventory-item.repository');
 const treatmentMedicationRepository = require('../repositories/treatment-medication.repository');
 const inventoryService = require('./inventory.service');
+const activityService = require('./activity.service');
 const { db } = require('../config/database');
 const { INVENTORY_REFERENCE_TYPES, WITHDRAWAL_PRODUCTS } = require('../config/constants');
 const { NotFoundError, ValidationError } = require('../utils/errors');
@@ -59,9 +60,10 @@ class AnimalHealthService {
   /**
    * Create a health record
    * @param {Object} data - Health record data
+   * @param {Object} [t] - Outer transaction to join
    * @returns {Promise<Object>}
    */
-  async createHealthRecord(data) {
+  async createHealthRecord(data, t) {
     if (!data.animal_id && !data.animal_group_id) {
       throw new ValidationError('Either animal_id or animal_group_id is required');
     }
@@ -70,22 +72,24 @@ class AnimalHealthService {
       throw new ValidationError('Cannot specify both animal_id and animal_group_id');
     }
 
-    // Verify animal or group exists
-    if (data.animal_id) {
-      const animal = await animalRepository.findById(data.animal_id);
-      if (!animal) {
-        throw new NotFoundError('Animal not found');
+    return (t || db).tx(async (tx) => {
+      // Verify animal or group exists
+      if (data.animal_id) {
+        const animal = await animalRepository.findById(data.animal_id, tx);
+        if (!animal) {
+          throw new NotFoundError('Animal not found');
+        }
       }
-    }
 
-    if (data.animal_group_id) {
-      const group = await animalGroupRepository.findById(data.animal_group_id);
-      if (!group) {
-        throw new NotFoundError('Animal group not found');
+      if (data.animal_group_id) {
+        const group = await animalGroupRepository.findById(data.animal_group_id, tx);
+        if (!group) {
+          throw new NotFoundError('Animal group not found');
+        }
       }
-    }
 
-    return await animalHealthRecordRepository.create(data);
+      return activityService.createDetail(tx, 'animal_health_records', animalHealthRecordRepository, data);
+    });
   }
 
   /**
@@ -95,11 +99,14 @@ class AnimalHealthService {
    * @returns {Promise<Object>}
    */
   async updateHealthRecord(id, data) {
-    const record = await animalHealthRecordRepository.findById(id);
-    if (!record) {
-      throw new NotFoundError('Health record not found');
-    }
-    return await animalHealthRecordRepository.update(id, data);
+    return db.tx(async (tx) => {
+      const record = await animalHealthRecordRepository.findById(id, tx);
+      if (!record) {
+        throw new NotFoundError('Health record not found');
+      }
+      const updated = await animalHealthRecordRepository.update(record.id, data, tx);
+      return activityService.syncDetail(tx, 'animal_health_records', updated);
+    });
   }
 
   /**
@@ -108,11 +115,14 @@ class AnimalHealthService {
    * @returns {Promise<void>}
    */
   async deleteHealthRecord(id) {
-    const record = await animalHealthRecordRepository.findById(id);
-    if (!record) {
-      throw new NotFoundError('Health record not found');
-    }
-    await animalHealthRecordRepository.softDelete(id);
+    await db.tx(async (tx) => {
+      const record = await animalHealthRecordRepository.findById(id, tx);
+      if (!record) {
+        throw new NotFoundError('Health record not found');
+      }
+      await animalHealthRecordRepository.softDelete(record.id, tx);
+      await activityService.removeDetail(tx, record);
+    });
   }
 
   /**
@@ -190,10 +200,11 @@ class AnimalHealthService {
    * giveDose: each dose can come from stock and sets withdrawal dates. All or
    * nothing: short stock for any dose records no treatment.
    * @param {Object} data - Disease/treatment data, with recorded_by and optional doses[]
+   * @param {Object} [t] - Outer transaction to join
    * @returns {Promise<Object>} The record, with `doses`
    * @throws {ConflictError} INSUFFICIENT_STOCK, BATCH_NOT_USABLE
    */
-  async createDiseaseTreatment(data) {
+  async createDiseaseTreatment(data, t) {
     if (!data.animal_id && !data.animal_group_id) {
       throw new ValidationError('Either animal_id or animal_group_id is required');
     }
@@ -203,7 +214,7 @@ class AnimalHealthService {
     }
 
     const { doses = [], ...fields } = data;
-    return db.tx(async (tx) => {
+    return (t || db).tx(async (tx) => {
       // Verify animal or group exists
       if (data.animal_id) {
         const animal = await animalRepository.findById(data.animal_id, tx);
@@ -219,10 +230,19 @@ class AnimalHealthService {
         }
       }
 
-      const treatment = await animalDiseaseTreatmentRepository.create(fields, tx);
+      const treatment = await activityService.createDetail(
+        tx,
+        'animal_diseases_treatments',
+        animalDiseaseTreatmentRepository,
+        fields
+      );
       const given = [];
       for (const dose of doses) {
         given.push(await this.giveDose(treatment, dose, data.recorded_by, tx));
+      }
+      if (given.length > 0) {
+        // The doses' cost is the treatment's input cost
+        await activityService.syncDetail(tx, 'animal_diseases_treatments', treatment);
       }
       return { ...treatment, doses: given };
     });
@@ -235,13 +255,16 @@ class AnimalHealthService {
    * @returns {Promise<Object>}
    */
   async updateDiseaseTreatment(id, data) {
-    const record = await animalDiseaseTreatmentRepository.findById(id);
-    if (!record) {
-      throw new NotFoundError('Disease/treatment record not found');
-    }
-    // eslint-disable-next-line no-unused-vars
-    const { doses, ...changes } = data;
-    return await animalDiseaseTreatmentRepository.update(id, changes);
+    return db.tx(async (tx) => {
+      const record = await animalDiseaseTreatmentRepository.findById(id, tx);
+      if (!record) {
+        throw new NotFoundError('Disease/treatment record not found');
+      }
+      // eslint-disable-next-line no-unused-vars
+      const { doses, ...changes } = data;
+      const updated = await animalDiseaseTreatmentRepository.update(record.id, changes, tx);
+      return activityService.syncDetail(tx, 'animal_diseases_treatments', updated);
+    });
   }
 
   /**
@@ -260,6 +283,7 @@ class AnimalHealthService {
         await this.removeDose(dose, userId, tx);
       }
       await animalDiseaseTreatmentRepository.softDelete(record.id, tx);
+      await activityService.removeDetail(tx, record);
     });
   }
 
@@ -276,7 +300,9 @@ class AnimalHealthService {
       if (!treatment) {
         throw new NotFoundError('Disease/treatment record not found');
       }
-      return this.giveDose(treatment, dose, userId, tx);
+      const given = await this.giveDose(treatment, dose, userId, tx);
+      await activityService.syncDetail(tx, 'animal_diseases_treatments', treatment);
+      return given;
     });
   }
 
@@ -295,6 +321,10 @@ class AnimalHealthService {
         throw new NotFoundError('Dose not found');
       }
       await this.removeDose(dose, userId, tx);
+      const treatment = await animalDiseaseTreatmentRepository.findById(treatmentId, tx);
+      if (treatment) {
+        await activityService.syncDetail(tx, 'animal_diseases_treatments', treatment);
+      }
     });
   }
 

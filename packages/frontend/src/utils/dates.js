@@ -55,3 +55,24 @@ export function daysUntil(value, now = new Date()) {
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     return Math.round((date - today) / 86400000);
 }
+
+/**
+ * How old something born on a DATE string is: days under two months, then
+ * months, then years and months
+ * @param {string} value - 'YYYY-MM-DD'
+ * @param {Date} [now]
+ * @returns {string}
+ */
+export function formatAge(value, now = new Date()) {
+    const born = fromApiDate(value);
+    if (!born) return '';
+    const days = -daysUntil(value, now);
+    if (days < 0) return '';
+    let months = (now.getFullYear() - born.getFullYear()) * 12 + now.getMonth() - born.getMonth();
+    if (now.getDate() < born.getDate()) months -= 1;
+    if (months < 2) return `${days} ${days === 1 ? 'day' : 'days'}`;
+    if (months < 24) return `${months} months`;
+    const years = Math.floor(months / 12);
+    const rest = months % 12;
+    return rest ? `${years} y ${rest} m` : `${years} years`;
+}

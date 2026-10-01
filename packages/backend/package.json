@@ -10,6 +10,7 @@
     "test:watch": "jest --watch",
     "lint": "eslint \"src/**/*.js\" \"tests/**/*.js\"",
     "lint:fix": "eslint \"src/**/*.js\" \"tests/**/*.js\" --fix",
+    "lint:openapi": "redocly lint --format=stylish",
     "migrate": "node src/database/migrate.js",
     "inventory:reconcile": "node src/database/inventory-reconcile.js",
     "seed": "node src/database/seed.js",
@@ -18,27 +19,31 @@
     "test:ci": "jest --coverage --ci"
   },
   "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "compression": "^1.7.4",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "date-fns": "^2.30.0",
+    "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "express-validator": "^7.0.1",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "multer": "^2.4.0",
     "pg": "^8.11.3",
     "pg-promise": "^11.5.4",
-    "dotenv": "^16.3.1",
-    "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
-    "express-validator": "^7.0.1",
-    "morgan": "^1.10.0",
+    "swagger-ui-express": "^5.0.1",
     "winston": "^3.11.0",
-    "helmet": "^7.1.0",
-    "cors": "^2.8.5",
-    "compression": "^1.7.4",
-    "express-rate-limit": "^7.1.5",
-    "cookie-parser": "^1.4.6",
-    "date-fns": "^2.30.0"
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2",
-    "jest": "^29.7.0",
-    "supertest": "^6.3.3",
+    "@redocly/cli": "^2.57.0",
     "eslint": "^8.56.0",
-    "prettier": "^3.1.1"
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2",
+    "prettier": "^3.1.1",
+    "supertest": "^6.3.3"
   }
 }

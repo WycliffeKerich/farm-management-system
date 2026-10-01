@@ -10,6 +10,7 @@ import { useSupplierOptions } from '@/composables/useSupplierOptions';
 import { useAuthStore } from '@/stores/auth.store';
 import { daysUntil, fromApiDate, toApiDate } from '@/utils/dates';
 import { validationMessage } from '@/utils/forms';
+import { useFormat } from '@/composables/useFormat';
 import {
     MOVEMENT_OPTIONS,
     REFERENCE_TYPE_OPTIONS,
@@ -28,6 +29,7 @@ import {
 } from '@/utils/inventory';
 
 const route = useRoute();
+const { currency, locale } = useFormat();
 const router = useRouter();
 const toast = useToast();
 const authStore = useAuthStore();
@@ -740,7 +742,7 @@ onMounted(() => {
                     </div>
                     <div class="flex flex-col gap-2">
                         <label for="edit_price" class="font-medium">Cost per Unit</label>
-                        <InputNumber id="edit_price" v-model="editForm.cost_per_unit" :min="0" :minFractionDigits="2" mode="currency" currency="KES" locale="en-KE" class="w-full" />
+                        <InputNumber id="edit_price" v-model="editForm.cost_per_unit" :min="0" :minFractionDigits="2" mode="currency" :currency="currency" :locale="locale" class="w-full" />
                     </div>
                 </div>
 

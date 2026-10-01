@@ -66,7 +66,8 @@ class CropVarietyRepository extends BaseRepository {
       SELECT cv.*,
              ct.name as crop_type_name,
              ct.category as crop_type_category,
-             ct.typical_growth_days as crop_type_growth_days
+             ct.typical_growth_days as crop_type_growth_days,
+             ct.enterprise_id as crop_type_enterprise_id
       FROM crop_varieties cv
       JOIN crop_types ct ON cv.crop_type_id = ct.id
       WHERE cv.id = $1 AND cv.deleted_at IS NULL

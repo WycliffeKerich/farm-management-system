@@ -13,6 +13,7 @@
     "dev:frontend": "npm run dev -w packages/frontend",
     "build": "npm run build -w packages/frontend",
     "migrate": "npm run migrate -w packages/backend",
+    "seed": "npm run seed -w packages/backend",
     "inventory:reconcile": "npm run inventory:reconcile -w packages/backend",
     "test": "npm run test:backend && npm run test:frontend",
     "test:backend": "npm test -w packages/backend",
@@ -20,7 +21,8 @@
     "test:ci": "npm run test:ci -w packages/backend && npm run test:coverage -w packages/frontend",
     "lint": "npm run lint:backend && npm run lint:frontend",
     "lint:backend": "npm run lint -w packages/backend",
-    "lint:frontend": "npm run lint -w packages/frontend"
+    "lint:frontend": "npm run lint -w packages/frontend",
+    "lint:openapi": "npm run lint:openapi -w packages/backend"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
