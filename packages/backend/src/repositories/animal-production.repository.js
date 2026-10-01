@@ -227,7 +227,15 @@ class AnimalProductionRepository {
     );
   }
 
-  async createProductionRecord(data, t) {
+  /**
+   * Create a production record pointing at its activity. Only the activity
+   * service calls this (ADR-001); activity_id is never taken from the data.
+   * @param {Object} data - Record data (unknown keys are ignored)
+   * @param {number} activityId - The record's activity
+   * @param {Object} [t] - Task/transaction
+   * @returns {Promise<Object>} Created record
+   */
+  async createLinked(data, activityId, t) {
     const columns = [
       'production_type_id',
       'animal_id',
@@ -241,37 +249,14 @@ class AnimalProductionRepository {
       'withdrawal_override_reason',
       'withdrawal_override_by',
     ];
-    const values = [];
-    const placeholders = [];
-
-    columns.forEach((col) => {
-      if (data[col] !== undefined) {
-        values.push(data[col]);
-        placeholders.push(`$${values.length}`);
-      } else {
-        placeholders.push('NULL');
-      }
-    });
-
-    // Build the query with only non-null values
-    const insertColumns = [];
-    const insertPlaceholders = [];
-    const insertValues = [];
-
-    columns.forEach((col) => {
+    const values = { activity_id: activityId };
+    for (const col of columns) {
       if (data[col] !== undefined && data[col] !== null) {
-        insertColumns.push(col);
-        insertValues.push(data[col]);
-        insertPlaceholders.push(`$${insertValues.length}`);
+        values[col] = data[col];
       }
-    });
+    }
 
-    return (t || db).one(
-      `INSERT INTO animal_production_records (${insertColumns.join(', ')})
-       VALUES (${insertPlaceholders.join(', ')})
-       RETURNING *`,
-      insertValues
-    );
+    return (t || db).one('INSERT INTO animal_production_records ($1:name) VALUES ($1:csv) RETURNING *', [values]);
   }
 
   async updateProductionRecord(id, data, t) {
@@ -304,8 +289,8 @@ class AnimalProductionRepository {
     );
   }
 
-  async deleteProductionRecord(id) {
-    return db.result(
+  async deleteProductionRecord(id, t) {
+    return (t || db).result(
       'UPDATE animal_production_records SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL',
       [id]
     );

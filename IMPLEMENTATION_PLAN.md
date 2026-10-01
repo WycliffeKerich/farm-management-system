@@ -492,9 +492,18 @@ Follow-ups (carried into Phase 4):
    - The table has a subject CHECK, date CHECKs, a unique `client_request_id` (UUID) and a stored `title`. `occurred_on` is a DATE, as explained in the ADR.
    - `activity_id` is a unique FK on the 8 existing detail tables.
    - `backfill_activities()` is a SQL function that can be run again. It maps health record types to activity types and splits treatment costs into medicines (input) and fees (other).
-   - Still nullable: a migration after item 3 re-runs the backfill, sets `NOT NULL` and drops the function.
-   - Tests: `activities-backfill.test.js`.
-3. `ActivityService.record(t, {...})`, called by every detail-writing service inside its transaction. `GET /activities` timeline. `POST /activities/bulk`, idempotent on `client_request_id`.
+   - Nullable until item 3; migration 018 then re-runs the backfill, sets `NOT NULL` and drops the function.
+   - Tests: `activities-backfill.test.js`. The suite restores the 017 state while it runs, because the function still runs on any database that migrates through 017.
+3. ~~`ActivityService.record(t, {...})`, called by every detail-writing service inside its transaction. `GET /activities` timeline. `POST /activities/bulk`, idempotent on `client_request_id`.~~ Done:
+   - **Writes.** `ActivityService.createDetail` records the activity first, then inserts the detail row pointing at it (`createLinked`). `activity_id` is otherwise a protected column. `syncDetail` keeps the activity in step on edits, stock draws and dose changes; `removeDetail` soft-deletes it with its row. This covers the 8 create paths in the crop, feed, health and production services.
+   - **Migration 018.** `activity_id` is `NOT NULL` on all 8 tables, and `backfill_activities()` is dropped.
+   - **`GET /activities`:** paged; filters by subject, enterprise, performer, task, status, type (one or several), date range and title search; whitelisted sort; names of subject, location and people joined in. `GET /activities/:id` returns one activity.
+   - **`POST /activities/bulk`:** `{ entries: [{ client_request_id, kind, batch_id?, data }] }`, up to 100 entries.
+     - Each entry runs through its own endpoint's validators and service, in its own transaction, and comes back `created`, `duplicate` or `failed`.
+     - A replayed `client_request_id` returns the original activity. A failed entry records nothing and can be sent again.
+     - Kinds: `observation`, `harvest`, `input_application`, `pest_incident`, `feeding`, `health_record`, `treatment`, `production`.
+   - **Create functions** take an optional outer transaction, as `recordInputApplication` already did.
+   - Tests: `activities.test.js`.
 4. **Enterprises**: CRUD, and link crop batches, animal groups and animals to an enterprise (default derived from type).
 5. **Audit log**: a trigger function attached to business tables; `SET LOCAL app.user_id` in the tx helper; owner-only viewer.
 6. **Attachments**: upload with a size and MIME whitelist; `StorageAdapter` (local disk); attach to pest incidents, treatments, receipts and inspections.

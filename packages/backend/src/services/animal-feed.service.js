@@ -3,6 +3,7 @@ const animalRepository = require('../repositories/animal.repository');
 const animalGroupRepository = require('../repositories/animal-group.repository');
 const inventoryItemRepository = require('../repositories/inventory-item.repository');
 const inventoryService = require('./inventory.service');
+const activityService = require('./activity.service');
 const { db } = require('../config/database');
 const { INVENTORY_REFERENCE_TYPES } = require('../config/constants');
 const { NotFoundError, ValidationError } = require('../utils/errors');
@@ -65,10 +66,11 @@ class AnimalFeedService {
    * or group, and the record's cost comes from the stock used. All or
    * nothing: short stock records no feeding.
    * @param {Object} data - Feed record data, with recorded_by
+   * @param {Object} [t] - Outer transaction to join
    * @returns {Promise<Object>} The record, with `stock` when stock was used
    * @throws {ConflictError} INSUFFICIENT_STOCK, BATCH_NOT_USABLE
    */
-  async createFeedRecord(data) {
+  async createFeedRecord(data, t) {
     if (!data.animal_id && !data.animal_group_id) {
       throw new ValidationError('Either animal_id or animal_group_id is required');
     }
@@ -77,7 +79,7 @@ class AnimalFeedService {
       throw new ValidationError('Cannot specify both animal_id and animal_group_id');
     }
 
-    return db.tx(async (tx) => {
+    return (t || db).tx(async (tx) => {
       // Verify animal or group exists
       if (data.animal_id) {
         const animal = await animalRepository.findById(data.animal_id, tx);
@@ -108,18 +110,20 @@ class AnimalFeedService {
       // stock_quantity is set from the stock used, never taken from the request
       // eslint-disable-next-line no-unused-vars
       const { inventory_batch_id: batchId, stock_quantity, ...fields } = data;
-      const record = await animalFeedRecordRepository.create(
-        {
-          ...fields,
-          feed_name: data.feed_name || (item && item.name),
-          unit,
-          inventory_item_id: item ? item.id : null,
-          total_cost: costOf(data),
-        },
-        tx
-      );
+      const record = await activityService.createDetail(tx, 'animal_feed_records', animalFeedRecordRepository, {
+        ...fields,
+        feed_name: data.feed_name || (item && item.name),
+        unit,
+        inventory_item_id: item ? item.id : null,
+        total_cost: costOf(data),
+      });
+      if (!item) {
+        return record;
+      }
 
-      return item ? this.takeFeedFromStock(record, batchId, data.recorded_by, tx) : record;
+      // The draw settles the cost
+      const saved = await this.takeFeedFromStock(record, batchId, data.recorded_by, tx);
+      return activityService.syncDetail(tx, 'animal_feed_records', saved);
     });
   }
 
@@ -156,11 +160,12 @@ class AnimalFeedService {
           updated.feed_date !== record.feed_date ||
           Boolean(batchId));
       if (!restock) {
-        return updated;
+        return activityService.syncDetail(tx, 'animal_feed_records', updated);
       }
 
       await inventoryService.reverseReference(INVENTORY_REFERENCE_TYPES.ANIMAL_FEED_RECORD, record.id, userId, tx);
-      return this.takeFeedFromStock(updated, batchId, userId, tx);
+      const restocked = await this.takeFeedFromStock(updated, batchId, userId, tx);
+      return activityService.syncDetail(tx, 'animal_feed_records', restocked);
     });
   }
 
@@ -177,6 +182,7 @@ class AnimalFeedService {
         throw new NotFoundError('Feed record not found');
       }
       await animalFeedRecordRepository.softDelete(record.id, tx);
+      await activityService.removeDetail(tx, record);
       await inventoryService.reverseReference(INVENTORY_REFERENCE_TYPES.ANIMAL_FEED_RECORD, record.id, userId, tx);
     });
   }

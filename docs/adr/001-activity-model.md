@@ -43,11 +43,11 @@ Every operational event is written as a row in a new `activities` table. The row
 
 ### Rules
 
-1. **One writer.** `ActivityService.record(t, {...})` takes the caller's transaction. Every service that writes a detail row calls it inside that transaction and stores the returned id in the detail row's `activity_id`. No other code inserts into `activities`.
+1. **One writer.** `ActivityService.record(t, {...})` takes the caller's transaction. Every service that writes a detail row calls it inside that transaction and stores the returned id in the detail row's `activity_id`. In practice it goes through `ActivityService.createDetail`, which records the activity first and then inserts the row pointing at it. No other code inserts into `activities` or writes `activity_id`.
 2. **Detail rows and activities change together.** When a detail row is edited, the activity's date, subject, title and costs are updated in the same transaction. The same applies when a child row changes a cost, for example a medicine added to a treatment. When a detail row is soft-deleted, its activity is soft-deleted too. An activity never outlives its detail row, and a detail row is never saved without one.
 3. **Tasks are planned activities.** Creating a task, or a care-plan scheduled task, creates a `planned` activity. Completing it marks that activity `done`, or produces a `done` activity carrying `labour_hours` and `performed_by`. Cancelling it cancels the activity. This rule takes effect in the tasks and employees phase. Phase 5 covers the detail tables.
 4. **Mixed subjects.** Feed, health and treatment rows may hold both `animal_id` and `animal_group_id`. Their activity takes the animal, the most specific subject. The group can still be found through the animal.
-5. **Writes from offline clients.** `POST /activities/bulk` replays a client outbox. If an activity with a given `client_request_id` already exists, the request returns that activity and nothing new is written.
+5. **Writes from offline clients.** `POST /activities/bulk` replays a client outbox. Each entry names a kind of record (`harvest`, `feeding`, …) and is checked and written exactly as its own endpoint would, in its own transaction. If an activity with a given `client_request_id` already exists, the request returns that activity and nothing new is written. One failed entry does not hold back the others.
 6. **Scope.** The activities table covers operational work, meaning the things someone did *to* a subject. Lifecycle and ledger events stay where they are: births, deaths, sales, group adjustments, breeding, incubation, inventory transactions and financial transactions. They have their own reporting needs. They can be added later as new activity types if the timeline needs them.
 
 ### Backfill
@@ -59,7 +59,7 @@ Migration 017 creates the table and adds a nullable `activity_id` to each detail
 - maps `recorded_by` to `performed_by` through `employees.user_id` where such an employee exists;
 - sets the row's `activity_id`.
 
-The function can safely be run again. `enterprise_id` is filled in once batches, animals and groups link to enterprises (Phase 5 item 4). When every service records activities, a later migration runs the function once more, makes `activity_id` `NOT NULL` and drops the function.
+The function can safely be run again. `enterprise_id` is filled in once batches, animals and groups link to enterprises (Phase 5 item 4). Once every service recorded activities, migration 018 ran the function once more, made `activity_id` `NOT NULL` and dropped the function.
 
 ## Alternatives considered
 

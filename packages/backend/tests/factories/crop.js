@@ -1,4 +1,5 @@
 const { db } = require('../../src/config/database');
+const { createActivity } = require('./activity');
 
 let sequence = 0;
 const next = () => {
@@ -50,9 +51,17 @@ async function createBatch(overrides = {}) {
 }
 
 async function createHarvest(batchId, overrides = {}) {
-  return db.one('INSERT INTO harvests ($1:name) VALUES ($1:csv) RETURNING *', [
-    { harvest_date: '2026-04-01', quantity: 12.5, unit: 'kg', ...overrides, batch_id: batchId },
-  ]);
+  const harvest = { harvest_date: '2026-04-01', quantity: 12.5, unit: 'kg', ...overrides, batch_id: batchId };
+  if (!harvest.activity_id) {
+    const activity = await createActivity({
+      activity_type: 'harvest',
+      title: `Harvest ${harvest.quantity} ${harvest.unit}`,
+      occurred_on: harvest.harvest_date,
+      crop_batch_id: batchId,
+    });
+    harvest.activity_id = activity.id;
+  }
+  return db.one('INSERT INTO harvests ($1:name) VALUES ($1:csv) RETURNING *', [harvest]);
 }
 
 module.exports = { createCropType, createVariety, createLocation, createBatch, createHarvest };

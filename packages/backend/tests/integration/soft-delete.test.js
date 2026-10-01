@@ -3,6 +3,7 @@ const app = require('../../src/app');
 const { db, truncateAll } = require('../helpers/db');
 const { loginAs } = require('../factories/user');
 const { createCropType, createVariety, createBatch, createHarvest } = require('../factories/crop');
+const { createActivity } = require('../factories/activity');
 const { mapDatabaseError } = require('../../src/middleware/error.middleware');
 
 let manager;
@@ -146,10 +147,15 @@ describe('animal production', () => {
     const group = await db.one(
       "INSERT INTO animal_groups (name, quantity, date_established, status) VALUES ('Herd', 5, CURRENT_DATE, 'active') RETURNING id"
     );
+    const activity = await createActivity({
+      activity_type: 'production',
+      title: 'Milk 20 litres',
+      animal_group_id: group.id,
+    });
     const record = await db.one(
-      `INSERT INTO animal_production_records (production_type_id, animal_group_id, production_date, quantity)
-       VALUES ($1, $2, '2026-05-01', 20) RETURNING id`,
-      [type.id, group.id]
+      `INSERT INTO animal_production_records (production_type_id, animal_group_id, production_date, quantity, activity_id)
+       VALUES ($1, $2, '2026-05-01', 20, $3) RETURNING id`,
+      [type.id, group.id, activity.id]
     );
 
     const res = await request(app).delete(`/api/v1/animals/production/records/${record.id}`).set(manager.auth);
