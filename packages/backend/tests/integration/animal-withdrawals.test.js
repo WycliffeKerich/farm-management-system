@@ -275,6 +275,14 @@ describe('withdrawal holds on produce and sales', () => {
       withdrawal_override_reason: 'Fed to calves',
       withdrawal_override_by: owner.user.id,
     });
+    // The audit log keeps the override and who made it
+    const audited = await db.one(
+      `SELECT changed_by, after FROM audit_log
+        WHERE table_name = 'animal_production_records' AND record_id = $1 AND action = 'insert'`,
+      [overridden.body.data.id]
+    );
+    expect(audited.changed_by).toBe(owner.user.id);
+    expect(audited.after.withdrawal_override_reason).toBe('Fed to calves');
 
     const forged = await produce({
       production_date: '2026-03-10',

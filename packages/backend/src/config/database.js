@@ -1,3 +1,4 @@
+const { AsyncLocalStorage } = require('node:async_hooks');
 const pgPromise = require('pg-promise');
 
 /**
@@ -57,22 +58,53 @@ async function testConnection() {
   }
 }
 
+// The user a request acts for, so the audit trigger (migration 020) can say
+// who made each change. authenticate() runs the rest of the request inside it.
+const actingUser = new AsyncLocalStorage();
+
 /**
- * Run a callback inside a transaction.
- * Sets `app.user_id` for the duration of the transaction so database-level
- * auditing (Phase 5) can attribute changes to the acting user.
- * @param {number|null} userId - Acting user ID (may be null for system actions)
- * @param {Function} fn - async (t) => result
- * @returns {Promise<*>} Result of fn
+ * Run fn (and everything it awaits) as the given user
+ * @param {number|null} userId - Acting user ID (null for system actions)
+ * @param {Function} fn
+ * @returns {*} Result of fn
  */
-async function withTx(userId, fn) {
-  return db.tx(async (t) => {
-    if (userId) {
-      await t.func('set_config', ['app.user_id', String(userId), true]);
-    }
-    return fn(t);
-  });
+function runAsUser(userId, fn) {
+  return actingUser.run({ userId }, fn);
 }
+
+/**
+ * The user the current request acts for
+ * @returns {number|null}
+ */
+function currentUserId() {
+  return actingUser.getStore()?.userId ?? null;
+}
+
+// SET LOCAL lasts until the end of the transaction. A query sent on its own
+// is its own transaction, and so are several statements sent as one string.
+const setUserSql = (userId) => `SELECT set_config('app.user_id', '${Math.trunc(Number(userId))}', true);`;
+
+// Queries straight on the pool name the user in the same round trip
+const poolQuery = db.query;
+db.query = function query(text, values, qrm) {
+  const userId = currentUserId();
+  const named = userId && typeof text === 'string' ? `${setUserSql(userId)}\n${text}` : text;
+  return poolQuery.call(this, named, values, qrm);
+};
+
+// Transactions name the user first; their queries run on the transaction
+const poolTx = db.tx;
+db.tx = function tx(...args) {
+  const userId = currentUserId();
+  const callback = args.pop();
+  if (!userId || typeof callback !== 'function') {
+    return poolTx.call(this, ...args, callback);
+  }
+  return poolTx.call(this, ...args, async function asUser(t) {
+    await t.any(setUserSql(userId));
+    return callback.call(this, t);
+  });
+};
 
 /**
  * Close all pool connections (used by tests and scripts)
@@ -85,6 +117,7 @@ module.exports = {
   db,
   pgp,
   testConnection,
-  withTx,
+  runAsUser,
+  currentUserId,
   closeDatabase,
 };

@@ -131,7 +131,7 @@ This is the farmOS "logs" pattern, adapted to our relational schema.
   - An edited, already-applied migration fails the run.
   - Migrations stay idempotent as a safety net.
 - The **inventory ledger (`inventory_transactions`) is the source of truth**. `inventory_items.current_stock` and `inventory_batches.quantity_remaining` are cached projections, maintained in the same transaction and protected by `CHECK (… >= 0)`.
-- An **audit log** is written by a Postgres trigger on business tables. The app sets `SET LOCAL app.user_id` inside each transaction so the trigger knows who acted.
+- An **audit log** is written by a Postgres trigger on business tables. The app sets `app.user_id` locally in each transaction (and in front of each query sent straight on the pool) so the trigger knows who acted.
 
 ---
 
@@ -429,7 +429,7 @@ Follow-ups (carried into Phase 4):
 4. ~~**Withdrawal and PHI enforcement:**~~ Done.
    - Harvest, milk, egg and meat production recording is blocked (409 `WITHDRAWAL_ACTIVE`, with `safe_from` and the doses behind it) while under withdrawal.
    - Every animal sale is checked against the meat withdrawal period, since a sold animal may be slaughtered. The owner overrides for breeding stock.
-   - The owner can override with a reason; other roles get 403. The override is stored on the record (`withdrawal_override_reason`, `withdrawal_override_by`) until the Phase 5 audit log.
+   - The owner can override with a reason; other roles get 403. The override is stored on the record (`withdrawal_override_reason`, `withdrawal_override_by`), and since Phase 5 the audit log also keeps it with who made it.
    - `GET /withdrawals/active?date=`.
    - Selling without a sale record (`POST /individuals/:id/sale`, `PATCH /individuals/:id/status` to `sold`, and `POST /groups/:id/removal` with `type: 'sale'`) is also refused inside a meat withdrawal period. These routes have nowhere to keep an override, so the owner overrides by recording the sale through `POST /animals/sales`.
    - **Design:** nothing is stored on the animal, group or batch. Each dose or application keeps its own safe dates, and a product is held on a date while any record made on or before it has a safe date after it. Back-dated records and deletions stay correct without recalculation. A group is a counted flock: its holds come from the group's own treatments, and an animal's from its own.
@@ -511,7 +511,12 @@ Follow-ups (carried into Phase 4):
    - **API.** `GET/POST/PUT/DELETE /enterprises`. The list is paged, filters by `enterprise_type` and `is_active`, and sorts by name, type or created date. `GET /enterprises/:id` adds counts of batches, animals, groups and activities. Writes are for owners and managers. A delete is refused (`IN_USE`) while anything refers to the enterprise; deactivate it instead.
    - **Seeds.** Seeded enterprises carry types and units, and seeded crop and animal types link to them. Batches, animals and groups with no enterprise take their type's, and their activities follow. Re-running `npm run seed` applies this to an existing database.
    - Tests: `enterprises.test.js`.
-5. **Audit log**: a trigger function attached to business tables; `SET LOCAL app.user_id` in the tx helper; owner-only viewer.
+5. ~~**Audit log**: a trigger function attached to business tables; `SET LOCAL app.user_id` in the tx helper; owner-only viewer.~~ Done in migration 020:
+   - **Trigger.** `audit_row_change()` runs after every insert, update and delete on each business table. It stores the whole row before and after as jsonb. An update that sets `deleted_at` is logged as `soft_delete`. An update that changes nothing but `updated_at` is not logged. `audit_attach(table, ignored_columns)` attaches it; new tables in later migrations must call it. Not audited: `schema_migrations`, `audit_log`, `user_sessions` and `password_reset_tokens`. `users` is audited without `password_hash` and the login bookkeeping (`last_login`, `failed_login_count`, `locked_until`), so logins and password changes leave no row.
+   - **Who acted.** `authenticate` runs the rest of the request in an AsyncLocalStorage context holding the user (`runAsUser` in `config/database.js`). Every `db.tx` first runs `set_config('app.user_id', id, true)`. A query sent straight on the pool carries the same call in front of it, in the same round trip, so it applies to that statement only. Nothing outlives its transaction, so a pooled connection cannot carry one request's user into the next. Writes outside a request (migrations, seeds, jobs) have `changed_by` null. The unused `withTx(userId, fn)` helper was removed.
+   - **Withdrawal overrides** are now audited: the override columns on `harvests`, `animal_production_records` and `sales` are written through audited rows, with the owner as `changed_by`.
+   - **API.** `GET /audit-log`, for the owner only. It is paged, newest first (`order=asc` reverses it), and filters by `table`, `record_id`, `changed_by`, `action` (one or more) and `date_from`/`date_to`. Each row adds `changed_by_name` and, for updates, `changed_fields`.
+   - Tests: `audit-log.test.js`, plus an override check in `animal-withdrawals.test.js`.
 6. **Attachments**: upload with a size and MIME whitelist; `StorageAdapter` (local disk); attach to pest incidents, treatments, receipts and inspections.
 7. **Settings**: `farm_settings` with typed accessors and a settings page (currency, timezone, farm coordinates).
 8. **Consolidation:** migrate `production_records` → `animal_production_records` and drop the former. Fix the care-plan behaviour so an animal can have multiple active plans (F20).

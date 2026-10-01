@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { db } = require('../config/database');
+const { db, runAsUser } = require('../config/database');
 const { AuthenticationError, AuthorizationError } = require('../utils/errors');
 const logger = require('../utils/logger');
 
@@ -38,7 +38,8 @@ async function authenticate(req, res, next) {
     }
 
     req.user = { id: user.id, email: user.email, role: user.role };
-    next();
+    // The rest of the request writes as this user (read by the audit trigger)
+    runAsUser(user.id, next);
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
       next(new AuthenticationError('Token expired', 'TOKEN_EXPIRED'));

@@ -8,6 +8,7 @@ const supplierRoutes = require('./supplier.routes');
 const withdrawalRoutes = require('./withdrawal.routes');
 const activityRoutes = require('./activity.routes');
 const enterpriseRoutes = require('./enterprise.routes');
+const auditLogRoutes = require('./audit-log.routes');
 const { db } = require('../config/database');
 
 const router = express.Router();
@@ -58,6 +59,9 @@ router.use('/activities', activityRoutes);
 
 // Enterprises: the lines of business costed on their own
 router.use('/enterprises', enterpriseRoutes);
+
+// Who changed what (owner only)
+router.use('/audit-log', auditLogRoutes);
 
 // TODO: Add more route modules as they are implemented
 // router.use('/financial', financialRoutes);
