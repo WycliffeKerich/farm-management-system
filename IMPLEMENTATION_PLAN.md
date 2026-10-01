@@ -471,11 +471,11 @@ Follow-ups (carried into Phase 4):
      - The supplier list: a short lookup list that also feeds the supplier pickers.
      - The dashboard's item picker.
 
-**Tests:**
-- Integration: application → stock decremented → cost stored → PHI set → harvest blocked → owner override allowed.
-- Rollback: a failed stock deduction leaves no application row.
-- Unit conversion.
-- Done: `crop-inputs.test.js` (9), `animal-withdrawals.test.js` (14) and `inventory-reports.test.js` (9, including the item list's stock level filter, counts and sorting). Backend total 186 tests.
+**Tests:** ~~Done.~~
+- ~~Integration: application → stock decremented → cost stored → PHI set → harvest blocked → owner override allowed.~~ `crop-inputs.test.js`, "a spray from stock, end to end".
+- ~~Rollback: a failed stock deduction leaves no application row.~~ `crop-inputs.test.js`, "records nothing when stock is short or the batch cannot be used".
+- ~~Unit conversion.~~ `crop-inputs.test.js` (grams drawn from kilogram stock) and `inventory.draw.test.js`.
+- Suites: `crop-inputs.test.js` (10), `animal-withdrawals.test.js` (14) and `inventory-reports.test.js` (9, including the item list's stock level filter, counts and sorting). Backend total 187 tests.
 - Frontend: `utils/withdrawals.test.js`, `composables/useWithdrawalGuard.test.js`, `composables/useLazyTable.test.js` and `utils/inventoryReports.test.js`, with the product picker and purchase helpers in `utils/inventory.test.js`. Frontend total 70 tests.
 
 **Deliverables:** every spray, feed and dose deducts stock and carries a cost; harvesting or selling produce under withdrawal is prevented.

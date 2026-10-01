@@ -237,3 +237,28 @@ describe('pre-harvest interval', () => {
     expect(res.status).toBe(409);
   });
 });
+
+describe('a spray from stock, end to end', () => {
+  it('takes the stock, keeps the cost, holds the harvest, and lets the owner override', async () => {
+    const item = await createItem({ name: 'Mancozeb', unit: 'kg', pre_harvest_interval_days: 10 });
+    await receive(item.id, 10, { unit_cost: 150 });
+
+    const applied = await apply({ ...spray, quantity: 2, unit: 'kg', inventory_item_id: item.id });
+    expect(applied.status).toBe(201);
+    expect(applied.body.data).toMatchObject({ total_cost: 300, safe_harvest_date: '2026-03-11' });
+    expect(await stockOf(item.id)).toBe(8);
+
+    const blocked = await harvest({ harvest_date: '2026-03-06' });
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.error.details).toMatchObject({
+      safe_from: '2026-03-11',
+      holds: [{ product_name: 'Mancozeb', applied_on: '2026-03-01' }],
+    });
+    expect((await harvest({ harvest_date: '2026-03-06', override_reason: 'Tested clear' }, manager)).status).toBe(403);
+
+    const overridden = await harvest({ harvest_date: '2026-03-06', override_reason: 'Tested clear' }, owner);
+    expect(overridden.status).toBe(201);
+    expect(overridden.body.data.withdrawal_override_by).toBe(owner.user.id);
+    expect(await count('harvests')).toBe(1);
+  });
+});
