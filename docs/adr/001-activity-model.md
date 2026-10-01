@@ -28,14 +28,15 @@ Every operational event is written as a row in a new `activities` table. The row
 
 | Column | Notes |
 |---|---|
-| `activity_type` | `input_application`, `observation`, `harvest`, `pest_incident`, `feeding`, `health_check`, `vaccination`, `treatment`, `production`, `task_work`, then `inspection`, `environment_log`, … as modules arrive. A CHECK list, extended by migration. |
+| `activity_type` | `input_application`, `observation`, `harvest`, `pest_incident`, `feeding`, `vaccination`, `deworming`, `health_check`, `treatment`, `production`, `task_work`, then `inspection`, `environment_log`, … as modules arrive. A named CHECK list (`activities_type_check`), extended by migration. |
 | `status` | `planned`, `done` or `cancelled` |
-| `planned_for` / `occurred_at` | `planned_for` is a date. `occurred_at` is a `timestamptz`, required when `status = 'done'`. |
+| `title` | Short display text for the timeline, such as "Mancozeb 2 kg", written by the service along with the row. |
+| `planned_for` / `occurred_on` | Both are dates. `occurred_on` is required when `status = 'done'`, and `planned_for` when `status = 'planned'`. The detail tables only record dates, and a `DATE` cannot shift across time zones the way a midnight `timestamptz` can. This is why the plan's `occurred_at` became `occurred_on`. A time column can be added if quick-logging needs one. |
 | Subject | Exactly one of `crop_batch_id`, `animal_id`, `animal_group_id` is set, enforced by a CHECK. Later phases add `hive_id` and `mushroom_batch_id` to the same CHECK. `task_work` may have no subject. |
-| `enterprise_id`, `location_id` | `enterprise_id` defaults to the subject's enterprise. Both are copied onto the row so roll-ups don't depend on later moves. |
+| `enterprise_id`, `location_id` | `enterprise_id` defaults to the subject's enterprise. `location_id` is the crop batch's growing location; animals are placed through their housing. Both are copied onto the row so roll-ups don't depend on later moves. |
 | `performed_by` | `employees.id`: the person whose labour is costed |
 | `recorded_by` | `users.id`: whoever entered the record (kept apart from `performed_by`) |
-| `labour_hours`, `input_cost`, `other_cost` | Costs are copied from the detail row when it is written. |
+| `labour_hours`, `input_cost`, `other_cost` | Costs are copied from the detail row when it is written. `input_cost` is stock used: an input application's or feeding's `total_cost`, or a treatment's medicines. `other_cost` is the rest, such as a health record's or treatment's `cost` (vet fees and the like). |
 | `task_id` | The task this work completed, if any |
 | `client_request_id` | Unique and nullable. This is the offline idempotency key. |
 | `notes`, `created_at`, `updated_at`, `deleted_at` | Same conventions as the other tables |
@@ -43,22 +44,22 @@ Every operational event is written as a row in a new `activities` table. The row
 ### Rules
 
 1. **One writer.** `ActivityService.record(t, {...})` takes the caller's transaction. Every service that writes a detail row calls it inside that transaction and stores the returned id in the detail row's `activity_id`. No other code inserts into `activities`.
-2. **Detail rows and activities change together.** When a detail row is edited, the activity's date, subject and costs are updated in the same transaction. When a detail row is soft-deleted, its activity is soft-deleted too. An activity never outlives its detail row, and a detail row is never saved without one.
-3. **Tasks are planned activities.** Creating a task, or a care-plan scheduled task, creates a `planned` activity. Completing it marks that activity `done`, or produces a `done` activity carrying `labour_hours` and `performed_by`. Cancelling it cancels the activity.
+2. **Detail rows and activities change together.** When a detail row is edited, the activity's date, subject, title and costs are updated in the same transaction. The same applies when a child row changes a cost, for example a medicine added to a treatment. When a detail row is soft-deleted, its activity is soft-deleted too. An activity never outlives its detail row, and a detail row is never saved without one.
+3. **Tasks are planned activities.** Creating a task, or a care-plan scheduled task, creates a `planned` activity. Completing it marks that activity `done`, or produces a `done` activity carrying `labour_hours` and `performed_by`. Cancelling it cancels the activity. This rule takes effect in the tasks and employees phase. Phase 5 covers the detail tables.
 4. **Mixed subjects.** Feed, health and treatment rows may hold both `animal_id` and `animal_group_id`. Their activity takes the animal, the most specific subject. The group can still be found through the animal.
 5. **Writes from offline clients.** `POST /activities/bulk` replays a client outbox. If an activity with a given `client_request_id` already exists, the request returns that activity and nothing new is written.
 6. **Scope.** The activities table covers operational work, meaning the things someone did *to* a subject. Lifecycle and ledger events stay where they are: births, deaths, sales, group adjustments, breeding, incubation, inventory transactions and financial transactions. They have their own reporting needs. They can be added later as new activity types if the timeline needs them.
 
 ### Backfill
 
-A migration creates an activity for every existing detail row. It:
+Migration 017 creates the table and adds a nullable `activity_id` to each detail table. It then runs `backfill_activities()`, which creates an activity for every detail row that has none. For each such row, the function:
 
-- copies the row's date to `occurred_at`, with status `done`;
-- copies its subject and cost;
+- copies the row's date to `occurred_on`, with status `done`;
+- copies its subject, the batch's location, its cost and its soft-delete;
 - maps `recorded_by` to `performed_by` through `employees.user_id` where such an employee exists;
 - sets the row's `activity_id`.
 
-For crop rows, `enterprise_id` comes from the batch. Once the backfill is done, `activity_id` becomes `NOT NULL` on each detail table.
+The function can safely be run again. `enterprise_id` is filled in once batches, animals and groups link to enterprises (Phase 5 item 4). When every service records activities, a later migration runs the function once more, makes `activity_id` `NOT NULL` and drops the function.
 
 ## Alternatives considered
 

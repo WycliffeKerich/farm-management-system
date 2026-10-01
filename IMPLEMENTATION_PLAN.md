@@ -488,7 +488,12 @@ Follow-ups (carried into Phase 4):
 **Goal:** one timeline and one cost roll-up across modules, plus the cross-cutting platform pieces every later phase needs.
 
 1. ~~**ADR-001: Unified activity model.** Write `docs/adr/001-activity-model.md` covering the decision above, its alternatives (a separate task-only model; pure polymorphic logs) and the consequences.~~ Done: [docs/adr/001-activity-model.md](docs/adr/001-activity-model.md). It also fixes the rules the next items build on: a single writer (`ActivityService.record`), detail rows and activities edited and soft-deleted together, the most specific subject when a row names both animal and group, `recorded_by` (user) kept apart from `performed_by` (employee), and lifecycle and ledger events left out of scope. A third alternative, a UNION view, was also rejected.
-2. Migration: `activities` table; an `activity_id` column on the detail tables; a backfill script that creates activities for existing detail rows.
+2. ~~Migration: `activities` table; an `activity_id` column on the detail tables; a backfill script that creates activities for existing detail rows.~~ Done in migration 017:
+   - The table has a subject CHECK, date CHECKs, a unique `client_request_id` (UUID) and a stored `title`. `occurred_on` is a DATE, as explained in the ADR.
+   - `activity_id` is a unique FK on the 8 existing detail tables.
+   - `backfill_activities()` is a SQL function that can be run again. It maps health record types to activity types and splits treatment costs into medicines (input) and fees (other).
+   - Still nullable: a migration after item 3 re-runs the backfill, sets `NOT NULL` and drops the function.
+   - Tests: `activities-backfill.test.js`.
 3. `ActivityService.record(t, {...})`, called by every detail-writing service inside its transaction. `GET /activities` timeline. `POST /activities/bulk`, idempotent on `client_request_id`.
 4. **Enterprises**: CRUD, and link crop batches, animal groups and animals to an enterprise (default derived from type).
 5. **Audit log**: a trigger function attached to business tables; `SET LOCAL app.user_id` in the tx helper; owner-only viewer.
