@@ -133,7 +133,7 @@ router.get(
   '/individuals/:animalId/care-schedule',
   animalValidators.animalIdParam,
   validate,
-  animalController.getAnimalCareSchedule.bind(animalController)
+  animalController.getAnimalCareSchedules.bind(animalController)
 );
 
 router.post(
@@ -212,7 +212,7 @@ router.get(
   '/groups/:groupId/care-schedule',
   animalValidators.groupIdParam,
   validate,
-  animalController.getGroupCareSchedule.bind(animalController)
+  animalController.getGroupCareSchedules.bind(animalController)
 );
 
 router.post('/groups', animalValidators.createGroup, validate, animalController.createGroup.bind(animalController));

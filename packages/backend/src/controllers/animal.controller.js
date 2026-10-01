@@ -614,19 +614,19 @@ class AnimalController {
     }
   }
 
-  async getAnimalCareSchedule(req, res, next) {
+  async getAnimalCareSchedules(req, res, next) {
     try {
-      const schedule = await animalService.getAnimalCareSchedule(req.params.animalId);
-      res.json({ success: true, data: schedule });
+      const schedules = await animalService.getAnimalCareSchedules(req.params.animalId);
+      res.json({ success: true, data: schedules });
     } catch (error) {
       next(error);
     }
   }
 
-  async getGroupCareSchedule(req, res, next) {
+  async getGroupCareSchedules(req, res, next) {
     try {
-      const schedule = await animalService.getGroupCareSchedule(req.params.groupId);
-      res.json({ success: true, data: schedule });
+      const schedules = await animalService.getGroupCareSchedules(req.params.groupId);
+      res.json({ success: true, data: schedules });
     } catch (error) {
       next(error);
     }

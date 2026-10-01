@@ -162,7 +162,7 @@ Tables marked **(exists)** are already in migrations 001–011. **(new)** tables
   - Subject, with one set via a CHECK: `crop_batch_id`, `animal_id`, `animal_group_id`, `hive_id`, `mushroom_batch_id`
   - `performed_by` (employee_id), `labour_hours`, `input_cost`, `other_cost`, `task_id`, `client_request_id` (unique; used for offline idempotency), `notes`
 - Detail tables **(alter)** gain `activity_id` FK: `crop_input_applications`, `growth_observations`, `harvests`, `crop_pests_diseases`, `animal_feed_records`, `animal_health_records`, `animal_diseases_treatments`, `animal_production_records`, `hive_inspections`, `honey_harvests`, `mushroom_flushes`, `environment_logs`.
-- **Consolidation:** `production_records` (001) is dropped in favour of `animal_production_records` (006), migrating any rows first.
+- **Consolidation:** `production_records` (001) is dropped in favour of `animal_production_records` (006), migrating any rows first (migration 023).
 
 ### Crop Management
 - (exists) `crop_types`, `crop_varieties`, `growing_locations`, `crop_batches`, `growth_observations`, `harvests`, `crop_input_applications`, `crop_pests_diseases`, `crop_care_plans`, `crop_care_plan_tasks`, `batch_care_schedules`, `scheduled_batch_tasks`.
@@ -528,7 +528,11 @@ Follow-ups (carried into Phase 4):
    - **Service.** `settings.service.js` holds a registry of settings, each with a default and a check: `farm_name` ('My Farm'), `currency` ('KES', ISO 4217), `timezone` ('Africa/Nairobi', IANA) and `farm_location` (null, or latitude/longitude). Settings not yet saved take their default. Typed accessors: `getCurrency`, `getTimezone`, `getFarmLocation`, `getFarmName`.
    - **API.** `GET /settings` is for anyone signed in. `PUT /settings` is for the owner only and takes some settings. Unknown keys or bad values refuse the whole change, with one detail per field.
    - Tests: `settings.test.js`.
-8. **Consolidation:** migrate `production_records` → `animal_production_records` and drop the former. Fix the care-plan behaviour so an animal can have multiple active plans (F20).
+8. ~~**Consolidation:** migrate `production_records` → `animal_production_records` and drop the former. Fix the care-plan behaviour so an animal can have multiple active plans (F20).~~ Done:
+   - **F18, migration 023.** Rows in `production_records` move to `animal_production_records`, each with a `production` activity (enterprise from its animal or group, performer from the recording user), and the old table is dropped. The old free-text product goes to the live production type of the same name and unit. Otherwise a type is created, as "<name> (<unit>)" when the name is taken with another unit or the old rows use it with several units. If a row has no type in its own unit to go to, the migration stops rather than read its quantity in the wrong unit. A row naming both an animal and a group takes the animal, as in 017.
+   - **F20.** An animal or group can follow several care plans at once. Applying a plan no longer cancels the others; applying a plan it already follows is refused (409 `CARE_PLAN_ALREADY_ACTIVE`), so cancel that schedule to restart it. The schedule and its tasks are written in one transaction, and the response is the new schedule. `GET /animals/individuals/:id/care-schedule` and `GET /animals/groups/:id/care-schedule` now return a list of active schedules, oldest start first. No frontend view used them.
+   - Crop batches keep one care plan at a time.
+   - Tests: `production-records-migration.test.js`; a regression test in `animals.test.js`.
 9. **OpenAPI**: create `openapi.yaml` covering auth, users, inventory and activities; serve Swagger UI in dev; lint the spec in CI. From here on, every new endpoint must be in the spec.
 10. **Frontend:** a farm timeline view (filterable); a timeline tab on batch, animal and group detail; attachment upload component; settings page.
 

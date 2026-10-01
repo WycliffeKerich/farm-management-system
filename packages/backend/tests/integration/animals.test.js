@@ -421,16 +421,13 @@ describe('deaths', () => {
 });
 
 describe('care plans and schedules', () => {
-  async function createPlan(appliesTo = 'both') {
-    const plan = await request(app)
-      .post(`${API}/care-plans`)
-      .set(manager.auth)
-      .send({
-        name: `Vaccination ${appliesTo}`,
-        plan_type: 'vaccination',
-        applies_to: appliesTo,
-        total_duration_days: 60,
-      });
+  async function createPlan(appliesTo = 'both', name = `Vaccination ${appliesTo}`) {
+    const plan = await request(app).post(`${API}/care-plans`).set(manager.auth).send({
+      name,
+      plan_type: 'vaccination',
+      applies_to: appliesTo,
+      total_duration_days: 60,
+    });
     expect(plan.status).toBe(201);
     const planId = plan.body.data.id;
 
@@ -512,8 +509,11 @@ describe('care plans and schedules', () => {
       .send({ plan_id: planId, start_date: daysFromToday(-30) });
     expect(applied.status).toBe(201);
 
+    expect(applied.body.data).toMatchObject({ plan_id: planId, animal_group_id: group.id, status: 'active' });
+    expect(applied.body.data.tasks).toHaveLength(5);
+
     const schedule = await request(app).get(`${API}/groups/${group.id}/care-schedule`).set(worker.auth);
-    expect(schedule.body.data.plan_id).toBe(planId);
+    expect(schedule.body.data.map((s) => s.plan_id)).toEqual([planId]);
 
     const tasks = await request(app).get(`${API}/scheduled-tasks?animal_group_id=${group.id}`).set(worker.auth);
     // 1 one-off + weigh on days 0, 20, 40, 60
@@ -586,9 +586,48 @@ describe('care plans and schedules', () => {
       expect((await request(app).patch(`${API}${path}`).set(worker.auth).send(body)).status).toBe(404);
     }
 
-    const scheduleId = schedule.body.data.id;
+    const scheduleId = schedule.body.data[0].id;
     expect((await request(app).delete(`${API}/care-schedules/${scheduleId}`).set(manager.auth)).status).toBe(200);
     expect((await request(app).delete(`${API}/care-schedules/9999`).set(manager.auth)).status).toBe(404);
+  });
+
+  // F20: applying a plan used to cancel every other plan the animal was on
+  it('lets an animal and a group follow several plans, each once at a time', async () => {
+    const vaccinations = await createPlan('both', 'Vaccinations');
+    const deworming = await createPlan('both', 'Deworming');
+    const animal = await createAnimal();
+    const group = await createGroup();
+    const apply = (path, planId) =>
+      request(app)
+        .post(`${API}${path}/care-schedule`)
+        .set(worker.auth)
+        .send({ plan_id: planId, start_date: daysFromToday(0) });
+    const active = async (path) =>
+      (await request(app).get(`${API}${path}/care-schedule`).set(worker.auth)).body.data.map((s) => s.plan_name);
+
+    for (const path of [`/individuals/${animal.id}`, `/groups/${group.id}`]) {
+      expect((await apply(path, vaccinations)).status).toBe(201);
+      expect((await apply(path, deworming)).status).toBe(201);
+      expect(await active(path)).toEqual(['Vaccinations', 'Deworming']);
+
+      const again = await apply(path, vaccinations);
+      expect(again.status).toBe(409);
+      expect(again.body.error.code).toBe('CARE_PLAN_ALREADY_ACTIVE');
+      expect(await active(path)).toEqual(['Vaccinations', 'Deworming']);
+    }
+
+    // Cancelling a schedule frees its plan to start again; the other plan is untouched
+    const [first] = (await request(app).get(`${API}/individuals/${animal.id}/care-schedule`).set(worker.auth)).body
+      .data;
+    await request(app).delete(`${API}/care-schedules/${first.id}`).set(manager.auth).expect(200);
+    expect(await active(`/individuals/${animal.id}`)).toEqual(['Deworming']);
+    expect((await apply(`/individuals/${animal.id}`, vaccinations)).status).toBe(201);
+    expect(await active(`/individuals/${animal.id}`)).toEqual(['Deworming', 'Vaccinations']);
+    // Each schedule keeps its own tasks: 5 per plan applied, the cancelled one's included
+    const tasks = await db.one('SELECT count(*)::int AS n FROM scheduled_animal_tasks WHERE animal_id = $1', [
+      animal.id,
+    ]);
+    expect(tasks.n).toBe(15);
   });
 
   it('applies a plan to an individual and respects applies_to', async () => {
@@ -620,7 +659,7 @@ describe('care plans and schedules', () => {
       .send({ plan_id: individualOnly, start_date: daysFromToday(0) });
     expect(applied.status).toBe(201);
     const schedule = await request(app).get(`${API}/individuals/${animal.id}/care-schedule`).set(worker.auth);
-    expect(schedule.body.data.plan_id).toBe(individualOnly);
+    expect(schedule.body.data.map((s) => s.plan_id)).toEqual([individualOnly]);
 
     expect(
       (

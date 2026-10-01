@@ -9,11 +9,12 @@ class AnimalCareScheduleRepository extends BaseRepository {
   }
 
   /**
-   * Find active schedule for an animal
-   * @param {number} animalId - Animal ID
-   * @returns {Promise<Object|null>}
+   * Active schedules of an animal or a group, oldest first
+   * @param {{animal_id: number}|{animal_group_id: number}} subject
+   * @returns {Promise<Array>}
    */
-  async findActiveByAnimalId(animalId) {
+  async findActive(subject) {
+    const column = subject.animal_id !== undefined ? 'animal_id' : 'animal_group_id';
     const query = `
       SELECT acs.*,
              acp.name as plan_name,
@@ -23,19 +24,20 @@ class AnimalCareScheduleRepository extends BaseRepository {
       FROM ${this.tableName} acs
       JOIN animal_care_plans acp ON acs.plan_id = acp.id
       LEFT JOIN users u ON acs.applied_by = u.id
-      WHERE acs.animal_id = $1
+      WHERE acs.$1:name = $2
         AND acs.status = 'active'
         AND acs.deleted_at IS NULL
+      ORDER BY acs.start_date, acs.id
     `;
-    return await this.db.oneOrNone(query, [animalId]);
+    return await this.db.any(query, [column, subject[column]]);
   }
 
   /**
-   * Find active schedule for a group
-   * @param {number} groupId - Group ID
+   * A schedule with its plan's name and who applied it
+   * @param {number} id - Schedule ID
    * @returns {Promise<Object|null>}
    */
-  async findActiveByGroupId(groupId) {
+  async findWithPlan(id) {
     const query = `
       SELECT acs.*,
              acp.name as plan_name,
@@ -45,11 +47,9 @@ class AnimalCareScheduleRepository extends BaseRepository {
       FROM ${this.tableName} acs
       JOIN animal_care_plans acp ON acs.plan_id = acp.id
       LEFT JOIN users u ON acs.applied_by = u.id
-      WHERE acs.animal_group_id = $1
-        AND acs.status = 'active'
-        AND acs.deleted_at IS NULL
+      WHERE acs.id = $1 AND acs.deleted_at IS NULL
     `;
-    return await this.db.oneOrNone(query, [groupId]);
+    return await this.db.oneOrNone(query, [id]);
   }
 
   /**
@@ -88,34 +88,6 @@ class AnimalCareScheduleRepository extends BaseRepository {
       ORDER BY acs.applied_date DESC
     `;
     return await this.db.any(query, [groupId]);
-  }
-
-  /**
-   * Deactivate schedules for an animal
-   * @param {number} animalId - Animal ID
-   * @returns {Promise<void>}
-   */
-  async deactivateForAnimal(animalId) {
-    const query = `
-      UPDATE ${this.tableName}
-      SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-      WHERE animal_id = $1 AND status = 'active' AND deleted_at IS NULL
-    `;
-    await this.db.none(query, [animalId]);
-  }
-
-  /**
-   * Deactivate schedules for a group
-   * @param {number} groupId - Group ID
-   * @returns {Promise<void>}
-   */
-  async deactivateForGroup(groupId) {
-    const query = `
-      UPDATE ${this.tableName}
-      SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-      WHERE animal_group_id = $1 AND status = 'active' AND deleted_at IS NULL
-    `;
-    await this.db.none(query, [groupId]);
   }
 
   /**
