@@ -10,6 +10,7 @@ const activityRoutes = require('./activity.routes');
 const enterpriseRoutes = require('./enterprise.routes');
 const auditLogRoutes = require('./audit-log.routes');
 const attachmentRoutes = require('./attachment.routes');
+const settingsRoutes = require('./settings.routes');
 const { db } = require('../config/database');
 
 const router = express.Router();
@@ -66,6 +67,9 @@ router.use('/audit-log', auditLogRoutes);
 
 // Photos and documents attached to records
 router.use('/attachments', attachmentRoutes);
+
+// Farm-wide settings: currency, timezone, location
+router.use('/settings', settingsRoutes);
 
 // TODO: Add more route modules as they are implemented
 // router.use('/financial', financialRoutes);

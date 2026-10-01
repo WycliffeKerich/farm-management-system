@@ -149,7 +149,7 @@ Tables marked **(exists)** are already in migrations 001–011. **(new)** tables
 - `audit_log` **(new, 5)**: `table_name`, `record_id`, `action` (insert/update/delete/soft_delete), `changed_by`, `changed_at`, `before` jsonb, `after` jsonb.
 - `attachments` **(new, 5)**: `entity_type`, `entity_id`, `file_name`, `mime_type`, `size_bytes`, `storage_key`, `caption`, `uploaded_by`. Uses local-disk storage behind a `StorageAdapter` interface so it can move to S3-compatible storage later.
 - `farm_settings` **(new, 5)**: key → jsonb value with `effective_from`. Holds:
-  - currency (KES), timezone (Africa/Nairobi), farm location (lat/long for weather)
+  - farm name, currency (KES), timezone (Africa/Nairobi), farm location (lat/long for weather)
   - statutory payroll rates, notification defaults
 - `notifications` **(new, 9)** and `notification_preferences` **(new, 9)**.
 
@@ -523,7 +523,11 @@ Follow-ups (carried into Phase 4):
    - **Upload.** `POST /attachments` takes multipart `file`, `entity_type`, `entity_id` and `caption`. multer holds the file in memory, up to `UPLOAD_MAX_MB` (default 10; over it → 413 `FILE_TOO_LARGE`). The type is read from the file's first bytes, never from its name or the browser: JPEG, PNG, WebP or PDF. The record must exist and be live. The file is written first; if the row then fails, the file is removed.
    - **Read and change.** `GET /attachments?entity_type&entity_id` lists them, paged and newest first, with the uploader's name. `GET /attachments/:id` streams the file inline (`?download=true` to save it) with a sandboxing CSP. `PUT` changes the caption. `DELETE` soft-deletes the row and keeps the file for the audit trail. Captions and deletes are for the uploader, an owner or a manager. Finance attachments are for owners and managers only.
    - Tests: `attachments.test.js`.
-7. **Settings**: `farm_settings` with typed accessors and a settings page (currency, timezone, farm coordinates).
+7. ~~**Settings**: `farm_settings` with typed accessors and a settings page (currency, timezone, farm coordinates).~~ Done in migration 022 (the settings page is in item 10):
+   - **Schema.** `farm_settings`: `key`, `value` jsonb, `effective_from` and `updated_by`, unique on (`key`, `effective_from`). Plain settings are stored at `effective_from = '-infinity'`. Dated values, such as payroll rates in Phase 7, add rows, and the one in force on a date wins. The table is audited.
+   - **Service.** `settings.service.js` holds a registry of settings, each with a default and a check: `farm_name` ('My Farm'), `currency` ('KES', ISO 4217), `timezone` ('Africa/Nairobi', IANA) and `farm_location` (null, or latitude/longitude). Settings not yet saved take their default. Typed accessors: `getCurrency`, `getTimezone`, `getFarmLocation`, `getFarmName`.
+   - **API.** `GET /settings` is for anyone signed in. `PUT /settings` is for the owner only and takes some settings. Unknown keys or bad values refuse the whole change, with one detail per field.
+   - Tests: `settings.test.js`.
 8. **Consolidation:** migrate `production_records` → `animal_production_records` and drop the former. Fix the care-plan behaviour so an animal can have multiple active plans (F20).
 9. **OpenAPI**: create `openapi.yaml` covering auth, users, inventory and activities; serve Swagger UI in dev; lint the spec in CI. From here on, every new endpoint must be in the spec.
 10. **Frontend:** a farm timeline view (filterable); a timeline tab on batch, animal and group detail; attachment upload component; settings page.
