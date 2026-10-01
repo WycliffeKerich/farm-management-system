@@ -130,6 +130,17 @@ module.exports = {
   // Kinds of enterprise (enterprises_type_check, migration 019)
   ENTERPRISE_TYPES: ['crops', 'mushrooms', 'poultry', 'dairy', 'livestock', 'apiculture', 'aquaculture', 'other'],
 
+  // Tables a file can be attached to (attachments_entity_type_check, migration 021)
+  ATTACHMENT_ENTITY_TYPES: [
+    'activities',
+    'animal_diseases_treatments',
+    'animal_health_records',
+    'crop_pests_diseases',
+    'financial_transactions',
+    'growth_observations',
+    'inventory_transactions',
+  ],
+
   // HTTP status codes
   HTTP_STATUS: {
     OK: 200,

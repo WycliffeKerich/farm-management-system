@@ -9,6 +9,7 @@ const withdrawalRoutes = require('./withdrawal.routes');
 const activityRoutes = require('./activity.routes');
 const enterpriseRoutes = require('./enterprise.routes');
 const auditLogRoutes = require('./audit-log.routes');
+const attachmentRoutes = require('./attachment.routes');
 const { db } = require('../config/database');
 
 const router = express.Router();
@@ -62,6 +63,9 @@ router.use('/enterprises', enterpriseRoutes);
 
 // Who changed what (owner only)
 router.use('/audit-log', auditLogRoutes);
+
+// Photos and documents attached to records
+router.use('/attachments', attachmentRoutes);
 
 // TODO: Add more route modules as they are implemented
 // router.use('/financial', financialRoutes);
