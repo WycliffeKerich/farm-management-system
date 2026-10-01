@@ -16,8 +16,10 @@ import { toApiDate } from '@/utils/dates';
 import { validationMessage } from '@/utils/forms';
 import { useStockItems } from '@/composables/useStockItems';
 import ProductPicker from '@/components/inventory/ProductPicker.vue';
+import { useFormat } from '@/composables/useFormat';
 
 const toast = useToast();
+const { currency, locale, formatMoney } = useFormat();
 const stock = useStockItems();
 
 // State
@@ -269,7 +271,7 @@ const formatDate = (date) => {
 };
 
 const formatCurrency = (value) => {
-    return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(value);
+    return formatMoney(value);
 };
 
 const formatNumber = (value) => {
@@ -532,12 +534,12 @@ onMounted(() => {
                 <div class="grid grid-cols-2 gap-4">
                     <div class="flex flex-col gap-2">
                         <label for="cost_per_unit">Cost per Unit</label>
-                        <InputNumber id="cost_per_unit" v-model="recordForm.cost_per_unit" mode="currency" currency="KES" locale="en-KE" placeholder="0.00" @input="calculateTotalCost" />
+                        <InputNumber id="cost_per_unit" v-model="recordForm.cost_per_unit" mode="currency" :currency="currency" :locale="locale" placeholder="0.00" @input="calculateTotalCost" />
                     </div>
 
                     <div class="flex flex-col gap-2">
                         <label for="total_cost">Total Cost</label>
-                        <InputNumber id="total_cost" v-model="recordForm.total_cost" mode="currency" currency="KES" locale="en-KE" placeholder="0.00" :disabled="recordForm.cost_per_unit && recordForm.quantity" />
+                        <InputNumber id="total_cost" v-model="recordForm.total_cost" mode="currency" :currency="currency" :locale="locale" placeholder="0.00" :disabled="recordForm.cost_per_unit && recordForm.quantity" />
                     </div>
                 </div>
 

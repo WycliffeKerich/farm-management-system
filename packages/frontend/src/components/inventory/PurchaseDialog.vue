@@ -12,6 +12,7 @@ import inventoryService from '@/services/inventory.service';
 import { useSupplierOptions } from '@/composables/useSupplierOptions';
 import { validationMessage } from '@/utils/forms';
 import { emptyPurchase, formatCurrency, toPurchasePayload } from '@/utils/inventory';
+import { useFormat } from '@/composables/useFormat';
 
 /**
  * Receive a purchase of an item as a batch: the batch carries the supplier,
@@ -25,6 +26,7 @@ const visible = defineModel('visible', { type: Boolean, default: false });
 const emit = defineEmits(['saved']);
 
 const toast = useToast();
+const { currency, locale } = useFormat();
 const { suppliers, load: loadSuppliers } = useSupplierOptions();
 
 const form = ref(emptyPurchase(props.item));
@@ -82,7 +84,7 @@ const save = async () => {
                 </div>
                 <div class="flex flex-col gap-2">
                     <label for="purchase_cost" class="font-medium">Unit Cost</label>
-                    <InputNumber inputId="purchase_cost" v-model="form.unit_cost" :min="0" :minFractionDigits="2" mode="currency" currency="KES" locale="en-KE" class="w-full" />
+                    <InputNumber inputId="purchase_cost" v-model="form.unit_cost" :min="0" :minFractionDigits="2" mode="currency" :currency="currency" :locale="locale" class="w-full" />
                     <small v-if="total" class="text-surface-500">Total {{ formatCurrency(total) }}</small>
                 </div>
             </div>

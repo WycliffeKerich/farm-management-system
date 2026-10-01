@@ -37,7 +37,7 @@ export default defineConfig({
         coverage: {
             provider: 'v8',
             // The session and routing core; grow this list as views and stores get tests
-            include: ['src/services/api.js', 'src/stores/auth.store.js', 'src/router/guard.js', 'src/router/menu.js', 'src/utils/**'],
+            include: ['src/services/api.js', 'src/stores/auth.store.js', 'src/stores/settings.store.js', 'src/router/guard.js', 'src/router/menu.js', 'src/utils/**'],
             thresholds: { lines: 60 }
         }
     }

@@ -19,8 +19,10 @@ import { applyItemToDose, emptyDose, toDosesPayload } from '@/utils/inventory';
 import { useStockItems } from '@/composables/useStockItems';
 import { useAuthStore } from '@/stores/auth.store';
 import ProductPicker from '@/components/inventory/ProductPicker.vue';
+import { useFormat } from '@/composables/useFormat';
 
 const toast = useToast();
+const { currency, locale, formatMoney } = useFormat();
 const authStore = useAuthStore();
 const stock = useStockItems();
 const canRemoveDoses = computed(() => authStore.hasRole(['owner', 'manager']));
@@ -334,7 +336,7 @@ const formatDate = (date) => {
 };
 
 const formatCurrency = (value) => {
-    return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(value);
+    return formatMoney(value);
 };
 
 const getSeveritySeverity = (severity) => {
@@ -696,7 +698,7 @@ onMounted(() => {
 
                     <div class="flex flex-col gap-2">
                         <label for="cost">Cost</label>
-                        <InputNumber id="cost" v-model="recordForm.cost" mode="currency" currency="KES" locale="en-KE" placeholder="0.00" />
+                        <InputNumber id="cost" v-model="recordForm.cost" mode="currency" :currency="currency" :locale="locale" placeholder="0.00" />
                     </div>
                 </div>
 

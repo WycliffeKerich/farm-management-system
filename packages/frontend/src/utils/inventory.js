@@ -1,4 +1,5 @@
 import { toApiDate } from '@/utils/dates';
+import { formatMoney } from '@/utils/format';
 
 /**
  * Inventory ledger rules, matching the backend (config/constants.js):
@@ -257,6 +258,7 @@ export function toPurchasePayload(itemId, purchase) {
     };
 }
 
+/** An amount in the farm's currency */
 export function formatCurrency(value) {
-    return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(value || 0);
+    return formatMoney(value);
 }

@@ -13,8 +13,10 @@ import Select from 'primevue/select';
 import DatePicker from 'primevue/datepicker';
 import Tag from 'primevue/tag';
 import { toApiDate } from '@/utils/dates';
+import { useFormat } from '@/composables/useFormat';
 
 const toast = useToast();
+const { currency, locale } = useFormat();
 
 // State
 const records = ref([]);
@@ -479,7 +481,7 @@ onMounted(() => {
                     </div>
                     <div class="flex flex-col gap-2">
                         <label for="purchase_cost">Purchase Cost</label>
-                        <InputNumber id="purchase_cost" v-model="recordForm.purchase_cost" mode="currency" currency="KES" placeholder="Cost" />
+                        <InputNumber id="purchase_cost" v-model="recordForm.purchase_cost" mode="currency" :currency="currency" :locale="locale" placeholder="Cost" />
                     </div>
                 </div>
 

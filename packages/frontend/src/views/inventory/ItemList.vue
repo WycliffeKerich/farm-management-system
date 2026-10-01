@@ -12,8 +12,10 @@ import { useAuthStore } from '@/stores/auth.store';
 import { daysUntil, fromApiDate, toApiDate } from '@/utils/dates';
 import { validationMessage } from '@/utils/forms';
 import { MOVEMENT_OPTIONS, formatCurrency, isReducingMovement, itemSupplyFields, toTransactionPayload } from '@/utils/inventory';
+import { useFormat } from '@/composables/useFormat';
 
 const router = useRouter();
+const { currency, locale } = useFormat();
 const route = useRoute();
 const confirm = useConfirm();
 const toast = useToast();
@@ -457,7 +459,7 @@ onMounted(() => {
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="flex flex-col gap-2">
                         <label for="cost_per_unit" class="font-medium">Cost per Unit</label>
-                        <InputNumber id="cost_per_unit" v-model="itemForm.cost_per_unit" :min="0" :minFractionDigits="2" :maxFractionDigits="2" mode="currency" currency="KES" locale="en-KE" class="w-full" />
+                        <InputNumber id="cost_per_unit" v-model="itemForm.cost_per_unit" :min="0" :minFractionDigits="2" :maxFractionDigits="2" mode="currency" :currency="currency" :locale="locale" class="w-full" />
                     </div>
 
                     <div class="flex flex-col gap-2">
