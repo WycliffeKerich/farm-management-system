@@ -538,7 +538,15 @@ Follow-ups (carried into Phase 4):
    - Swagger UI is at `/api/v1/docs` and the raw spec at `/api/v1/docs/openapi.json`, both outside production only.
    - `npm run lint:openapi` (Redocly, recommended rules) runs in CI.
    - `openapi.test.js` compares the spec with the Express routes both ways. A new route in a documented router, or a new router that is neither documented nor listed as pending, fails the suite.
-10. **Frontend:** a farm timeline view (filterable); a timeline tab on batch, animal and group detail; attachment upload component; settings page.
+10. ~~**Frontend:** a farm timeline view (filterable); a timeline tab on batch, animal and group detail; attachment upload component; settings page.~~ Done:
+   - **Timeline.** `components/activities/ActivityTimeline.vue` is a lazy table filtered by search, type, status, enterprise and date range, with labour and cost totals per page. A row opens the activity's details and attachments. It backs the Farm Timeline page (`/timeline`) and a Timeline tab on the batch, animal and group pages.
+   - **Animal and group pages.** `/animals/:id` and `/animals/groups/:id` were placeholders and now have pages. An animal shows its facts, parents, timeline and offspring. A group shows its head count, deaths, sales and cost, its timeline and its head-count history.
+   - **Attachments.** `components/attachments/AttachmentPanel.vue` uploads (type and size checked before sending), lists with image thumbnails, previews images, opens PDFs, downloads, edits captions and deletes. The uploader, owners and managers may change an attachment. Files are fetched with the auth header as blobs. Records are attached to through their activity, which covers pest incidents, treatments and inspections.
+   - **Settings.** The Farm Settings page (`/settings`) is editable by the owner and read-only for others. It saves only what changed. The settings load once per session (`stores/settings.store.js`), and `utils/format.js` and the `useFormat` composable format money and timestamps in the farm's currency and time zone. The hard-coded KES and USD are gone from the forms and lists. The top bar shows the farm name.
+   - **Enterprises.** The Enterprises page (`/enterprises`) lists them for everyone; owners and managers create, edit, deactivate and delete them.
+   - **Audit log.** The Audit Log page (`/audit-log`, owner only) filters by table, record, user, change and date. A row expands to the fields before and after, and records with a page link to it.
+   - Tests: `utils/format`, `settings`, `activities`, `attachments`, `audit`, `dates` (`formatAge`), `toPageParams` with list filters, and the settings store.
+   - Not done: choosing the enterprise in the batch, animal and group forms. Records get the default from their type (item 4).
 
 **Deliverables:** every operational record appears on one timeline with labour and cost; the audit trail answers "who changed what"; photos and documents can be attached.
 

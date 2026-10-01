@@ -2,7 +2,7 @@ import { computed, ref, watch } from 'vue';
 
 /**
  * Query parameters for a paged list endpoint: page and limit, the sort as
- * `sort` and `order`, and the filters that have a value
+ * `sort` and `order`, and the filters that have a value (an empty list has none)
  * @param {{first: number, rows: number, sortField: string|null, sortOrder: number, filters: Object}} state
  * @returns {Object}
  */
@@ -14,6 +14,7 @@ export function toPageParams({ first, rows, sortField, sortOrder, filters }) {
     }
     for (const [key, value] of Object.entries(filters || {})) {
         const trimmed = typeof value === 'string' ? value.trim() : value;
+        if (Array.isArray(trimmed) && trimmed.length === 0) continue;
         if (trimmed !== null && trimmed !== undefined && trimmed !== '') params[key] = trimmed;
     }
     return params;

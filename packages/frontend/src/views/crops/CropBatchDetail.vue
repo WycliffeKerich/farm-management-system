@@ -11,6 +11,7 @@ import { useStockItems } from '@/composables/useStockItems';
 import { useWithdrawalGuard } from '@/composables/useWithdrawalGuard';
 import ProductPicker from '@/components/inventory/ProductPicker.vue';
 import WithdrawalDialog from '@/components/withdrawals/WithdrawalDialog.vue';
+import ActivityTimeline from '@/components/activities/ActivityTimeline.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -23,6 +24,7 @@ const withdrawalGuard = useWithdrawalGuard();
 const loading = ref(true);
 const saving = ref(false);
 const batch = ref(null);
+const timeline = ref(null);
 
 // Dialogs
 const statusDialog = ref(false);
@@ -80,6 +82,7 @@ const loadBatch = async () => {
         const response = await cropService.getBatchById(route.params.id);
         batch.value = response.data.data;
         holds.load();
+        timeline.value?.reload();
         // Load care schedule after batch data
         await loadCareSchedule();
     } catch (error) {
@@ -777,6 +780,11 @@ onMounted(() => {
                             </template>
                         </Column>
                     </DataTable>
+                </TabPanel>
+
+                <!-- Everything done on this batch, with labour, cost and attachments -->
+                <TabPanel header="Timeline">
+                    <ActivityTimeline ref="timeline" :subject="{ crop_batch_id: batch.id }" :farmWide="false" :rows="10" />
                 </TabPanel>
             </TabView>
         </div>

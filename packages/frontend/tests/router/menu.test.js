@@ -38,10 +38,14 @@ describe('buildMenu', () => {
 });
 
 describe('application menu', () => {
-    it('shows user management to owners only', () => {
-        expect(items(buildMenu(routes, as('owner')), 'Administration')).toContain('Users');
-        expect(labels(buildMenu(routes, as('manager')))).not.toContain('Administration');
-        expect(labels(buildMenu(routes, as('worker')))).not.toContain('Administration');
+    it('shows user management and the audit log to owners only', () => {
+        expect(items(buildMenu(routes, as('owner')), 'Administration')).toEqual(expect.arrayContaining(['Users', 'Audit Log', 'Enterprises', 'Farm Settings']));
+        for (const role of ['manager', 'worker']) {
+            const admin = items(buildMenu(routes, as(role)), 'Administration');
+            expect(admin).toEqual(expect.arrayContaining(['Enterprises', 'Farm Settings']));
+            expect(admin).not.toContain('Users');
+            expect(admin).not.toContain('Audit Log');
+        }
     });
 
     it('never links to a detail route that needs a parameter', () => {
